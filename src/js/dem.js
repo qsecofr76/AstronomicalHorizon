@@ -2,12 +2,12 @@
  * dem.js - Modulo per il recupero e decodifica dei raster altimetrici (DEM)
  * Utilizza i tile Terrarium di AWS Open Data Terrain (o fallback Open-Meteo).
  * Formato Terrarium: Quota in metri = (R * 256 + G + B / 256) - 32768
+ * Con interpolazione bilineare ad alta precisione sub-pixel.
  */
 
 export class DEMProvider {
     constructor() {
         this.tileCache = new Map();
-        this.corsProxy = ''; // Opzionale se necessario
         this.baseUrl = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
     }
 
@@ -97,7 +97,39 @@ export class DEMProvider {
     }
 
     /**
-     * Calcola la quota di un punto specifico (lat, lon)
+     * Calcola la quota con interpolazione bilineare sub-pixel all'interno di un tile
+     */
+    getBilinearElevation(tile, rawX, rawY) {
+        const w = tile.width;
+        const h = tile.height;
+        const x = Math.max(0, Math.min(w - 1.001, rawX));
+        const y = Math.max(0, Math.min(h - 1.001, rawY));
+
+        const x0 = Math.floor(x);
+        const x1 = Math.min(w - 1, x0 + 1);
+        const y0 = Math.floor(y);
+        const y1 = Math.min(h - 1, y0 + 1);
+
+        const fx = x - x0;
+        const fy = y - y0;
+
+        const idx00 = (y0 * w + x0) * 4;
+        const idx10 = (y0 * w + x1) * 4;
+        const idx01 = (y1 * w + x0) * 4;
+        const idx11 = (y1 * w + x1) * 4;
+
+        const h00 = this.decodeTerrariumPixel(tile.data[idx00], tile.data[idx00 + 1], tile.data[idx00 + 2]);
+        const h10 = this.decodeTerrariumPixel(tile.data[idx10], tile.data[idx10 + 1], tile.data[idx10 + 2]);
+        const h01 = this.decodeTerrariumPixel(tile.data[idx01], tile.data[idx01 + 1], tile.data[idx01 + 2]);
+        const h11 = this.decodeTerrariumPixel(tile.data[idx11], tile.data[idx11 + 1], tile.data[idx11 + 2]);
+
+        const hTop = h00 * (1.0 - fx) + h10 * fx;
+        const hBottom = h01 * (1.0 - fx) + h11 * fx;
+        return hTop * (1.0 - fy) + hBottom * fy;
+    }
+
+    /**
+     * Calcola la quota di un punto specifico (lat, lon) con interpolazione bilineare
      */
     async getPointElevation(lat, lon, zoom = 12) {
         const x = this.lon2tile(lon, zoom);
@@ -108,19 +140,12 @@ export class DEMProvider {
         }
 
         const normX = ((lon - tile.bounds.west) / (tile.bounds.east - tile.bounds.west)) * tile.width;
-        // In Web Mercator la Y cresce verso il Sud
         const latRad = lat * Math.PI / 180;
         const mercatorY = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom);
         const normY = (mercatorY - y) * tile.height;
 
-        const px = Math.min(tile.width - 1, Math.max(0, Math.floor(normX)));
-        const py = Math.min(tile.height - 1, Math.max(0, Math.floor(normY)));
-        const idx = (py * tile.width + px) * 4;
-
-        const r = tile.data[idx];
-        const g = tile.data[idx + 1];
-        const b = tile.data[idx + 2];
-        return Math.round(this.decodeTerrariumPixel(r, g, b) * 10) / 10;
+        const elev = this.getBilinearElevation(tile, normX, normY);
+        return Math.round(elev * 10) / 10;
     }
 
     /**
@@ -140,9 +165,9 @@ export class DEMProvider {
     }
 
     /**
-     * Costruisce una griglia di campionamento altimetrico attorno a un centro (lat, lon) e raggio in km
+     * Costruisce una griglia di campionamento altimetrico ad alta risoluzione con interpolazione bilineare
      */
-    async getElevationGrid(centerLat, centerLon, radiusKm, gridSize = 350) {
+    async getElevationGrid(centerLat, centerLon, radiusKm, gridSize = 420) {
         // Seleziona il livello di zoom ottimale in base al raggio
         let zoom = 12;
         if (radiusKm <= 8) zoom = 13;
@@ -161,7 +186,7 @@ export class DEMProvider {
 
         const minTileX = this.lon2tile(minLon, zoom);
         const maxTileX = this.lon2tile(maxLon, zoom);
-        const minTileY = this.lat2tile(maxLat, zoom); // Note: Y0 is North
+        const minTileY = this.lat2tile(maxLat, zoom); // Y0 is North
         const maxTileY = this.lat2tile(minLat, zoom); // Y1 is South
 
         // Scarica tutti i tile necessari in parallelo
@@ -180,7 +205,6 @@ export class DEMProvider {
         const lonStep = (maxLon - minLon) / (gridSize - 1);
 
         for (let row = 0; row < gridSize; row++) {
-            // Dall'alto (maxLat) verso il basso (minLat)
             const currentLat = maxLat - row * latStep;
             const latRad = currentLat * Math.PI / 180;
             const mercatorY = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * Math.pow(2, zoom);
@@ -195,10 +219,9 @@ export class DEMProvider {
                 let elev = 0;
 
                 if (tile) {
-                    const localPx = Math.min(tile.width - 1, Math.max(0, Math.floor((mercatorX - tx) * tile.width)));
-                    const localPy = Math.min(tile.height - 1, Math.max(0, Math.floor((mercatorY - ty) * tile.height)));
-                    const idx = (localPy * tile.width + localPx) * 4;
-                    elev = this.decodeTerrariumPixel(tile.data[idx], tile.data[idx + 1], tile.data[idx + 2]);
+                    const localX = (mercatorX - tx) * tile.width;
+                    const localY = (mercatorY - ty) * tile.height;
+                    elev = this.getBilinearElevation(tile, localX, localY);
                 }
 
                 elevations[row * gridSize + col] = elev;

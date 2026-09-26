@@ -221,9 +221,9 @@ class AstronomicalHorizonApp {
             const obsElevation = await this.demProvider.getPointElevation(lat, lon);
             this.updateObserverElevationDisplay(lat, lon, obsElevation);
 
-            // 2. Recupero griglia di elevazione DEM
-            this.setLoading(true, 'Generazione raster altimetrico del territorio...');
-            this.currentGridData = await this.demProvider.getElevationGrid(lat, lon, this.params.radiusKm, 320);
+            // 2. Recupero griglia di elevazione DEM ad alta risoluzione
+            this.setLoading(true, 'Generazione raster altimetrico del territorio ad alta risoluzione...');
+            this.currentGridData = await this.demProvider.getElevationGrid(lat, lon, this.params.radiusKm, 420);
 
             // 3. Invio al Web Worker per il calcolo dell'intervisibilità
             this.setLoading(true, 'Calcolo intervisibilità e orizzonte a 360°...');

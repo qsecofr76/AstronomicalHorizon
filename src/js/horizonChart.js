@@ -1,6 +1,6 @@
 /**
- * horizonChart.js - Gestione del grafico interattivo dell'orizzonte astronomico a 360°
- * Utilizza Chart.js per disegnare il profilo altimetrico montano e le traiettorie solari.
+ * horizonChart.js - Gestione del grafico interattivo dell'orizzonte astronomico ad alta risoluzione
+ * Disegna il profilo skyline con interpolazione morbida continua e traiettorie solari.
  */
 
 import { AstronomyService } from './astronomy.js';
@@ -26,26 +26,26 @@ export class HorizonChartManager {
 
         if (!this.canvas) return;
 
-        // Se Chart.js è disponibile globalmente o tramite bundle
         const ChartClass = window.Chart;
         if (!ChartClass) {
             console.error('Chart.js non trovato.');
             return;
         }
 
-        // Estrai dati orizzonte (0° a 360°)
+        const numPoints = horizonProfile.length;
         const labels = [];
         const horizonAngles = [];
-        for (let az = 0; az < 360; az++) {
-            labels.push(az);
-            const item = horizonProfile[az] || { maxAngle: 0 };
+
+        for (let i = 0; i < numPoints; i++) {
+            const item = horizonProfile[i] || { azimuth: i, maxAngle: 0 };
+            labels.push(item.azimuth);
             horizonAngles.push(Math.round(item.maxAngle * 100) / 100);
         }
 
         // Calcola percorsi solari
         const sunPaths = AstronomyService.getAstronomicalPaths(lat, lon);
 
-        // Prepara dataset solari
+        // Prepara dataset skyline con spline monotona
         const datasets = [
             {
                 label: 'Orizzonte Topografico (Skyline)',
@@ -55,93 +55,95 @@ export class HorizonChartManager {
                 borderColor: '#10b981',
                 borderWidth: 2,
                 pointRadius: 0,
-                pointHoverRadius: 5,
+                pointHoverRadius: 6,
                 pointHoverBackgroundColor: '#10b981',
-                tension: 0.1,
+                cubicInterpolationMode: 'monotone',
+                tension: 0.25,
                 order: 2
             }
         ];
 
         if (this.showSunPaths) {
-            // Mappa punti solari sui 360 gradi
-            const summerData = new Array(360).fill(null);
-            sunPaths.summerSolstice.forEach(p => {
-                const az = Math.round(p.x) % 360;
-                summerData[az] = p.y;
-            });
+            const summerData = new Array(numPoints).fill(null);
+            const winterData = new Array(numPoints).fill(null);
+            const equinoxData = new Array(numPoints).fill(null);
+            const todayData = new Array(numPoints).fill(null);
 
-            const winterData = new Array(360).fill(null);
-            sunPaths.winterSolstice.forEach(p => {
-                const az = Math.round(p.x) % 360;
-                winterData[az] = p.y;
-            });
+            const mapSolarPath = (points, targetArr) => {
+                points.forEach(p => {
+                    const bin = Math.min(numPoints - 1, Math.max(0, Math.round((p.x / 360.0) * numPoints)));
+                    targetArr[bin] = p.y;
+                });
+            };
 
-            const equinoxData = new Array(360).fill(null);
-            sunPaths.equinox.forEach(p => {
-                const az = Math.round(p.x) % 360;
-                equinoxData[az] = p.y;
-            });
-
-            const todayData = new Array(360).fill(null);
-            sunPaths.today.forEach(p => {
-                const az = Math.round(p.x) % 360;
-                todayData[az] = p.y;
-            });
+            mapSolarPath(sunPaths.summerSolstice, summerData);
+            mapSolarPath(sunPaths.winterSolstice, winterData);
+            mapSolarPath(sunPaths.equinox, equinoxData);
+            mapSolarPath(sunPaths.today, todayData);
 
             datasets.push(
                 {
                     label: 'Sole Oggi',
                     data: todayData,
-                    borderColor: '#fbbf24', // Oro
+                    borderColor: '#fbbf24',
                     borderWidth: 2.5,
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     spanGaps: true,
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.2,
                     order: 1
                 },
                 {
                     label: 'Solstizio d\'Estate (21 Giu)',
                     data: summerData,
-                    borderColor: '#f97316', // Arancione
+                    borderColor: '#f97316',
                     borderWidth: 1.5,
                     borderDash: [4, 4],
                     pointRadius: 0,
                     spanGaps: true,
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.2,
                     order: 3
                 },
                 {
                     label: 'Equinozio (20 Mar / 22 Set)',
                     data: equinoxData,
-                    borderColor: '#a855f7', // Viola
+                    borderColor: '#a855f7',
                     borderWidth: 1.5,
                     borderDash: [3, 3],
                     pointRadius: 0,
                     spanGaps: true,
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.2,
                     order: 4
                 },
                 {
                     label: 'Solstizio d\'Inverno (21 Dic)',
                     data: winterData,
-                    borderColor: '#38bdf8', // Celeste
+                    borderColor: '#38bdf8',
                     borderWidth: 1.5,
                     borderDash: [4, 4],
                     pointRadius: 0,
                     spanGaps: true,
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.2,
                     order: 5
                 }
             );
         }
 
-        const cardinalDirections = {
-            0: 'Nord (0°)',
-            45: 'NE (45°)',
-            90: 'Est (90°)',
-            135: 'SE (135°)',
-            180: 'Sud (180°)',
-            225: 'SO (225°)',
-            270: 'Ovest (270°)',
-            315: 'NO (315°)',
-            359: 'Nord (360°)'
+        const getCardinalLabel = (azimuth) => {
+            const az = Math.round(azimuth);
+            if (az === 0 || az === 360) return 'Nord (0°)';
+            if (az === 45) return 'NE (45°)';
+            if (az === 90) return 'Est (90°)';
+            if (az === 135) return 'SE (135°)';
+            if (az === 180) return 'Sud (180°)';
+            if (az === 225) return 'SO (225°)';
+            if (az === 270) return 'Ovest (270°)';
+            if (az === 315) return 'NO (315°)';
+            return null;
         };
 
         if (this.chart) {
@@ -185,13 +187,14 @@ export class HorizonChartManager {
                         padding: 10,
                         callbacks: {
                             title: (items) => {
-                                const az = items[0].dataIndex;
-                                const cardinal = cardinalDirections[az] || `${az}°`;
+                                const idx = items[0].dataIndex;
+                                const az = labels[idx];
+                                const cardinal = getCardinalLabel(az) || `${az}°`;
                                 return `Azimut: ${cardinal}`;
                             },
                             afterBody: (items) => {
-                                const az = items[0].dataIndex;
-                                const info = this.currentHorizonData ? this.currentHorizonData[az] : null;
+                                const idx = items[0].dataIndex;
+                                const info = this.currentHorizonData ? this.currentHorizonData[idx] : null;
                                 if (info && info.hasObstacle) {
                                     return [
                                         `Quota Vetta: ${info.elevationM} m`,
@@ -212,12 +215,31 @@ export class HorizonChartManager {
                 scales: {
                     x: {
                         grid: {
-                            color: (ctx) => [0, 45, 90, 135, 180, 225, 270, 315].includes(ctx.tick.value) ? 'rgba(148, 163, 184, 0.3)' : 'rgba(51, 65, 85, 0.15)',
-                            lineWidth: (ctx) => [0, 90, 180, 270].includes(ctx.tick.value) ? 1.5 : 0.8
+                            color: (ctx) => {
+                                const az = labels[ctx.tick.value];
+                                if (!az) return 'transparent';
+                                const roundAz = Math.round(az);
+                                return [0, 45, 90, 135, 180, 225, 270, 315].includes(roundAz)
+                                    ? 'rgba(148, 163, 184, 0.3)'
+                                    : 'rgba(51, 65, 85, 0.15)';
+                            },
+                            lineWidth: (ctx) => {
+                                const az = labels[ctx.tick.value];
+                                if (!az) return 1;
+                                const roundAz = Math.round(az);
+                                return [0, 90, 180, 270].includes(roundAz) ? 1.5 : 0.8;
+                            }
                         },
                         ticks: {
                             color: '#94a3b8',
-                            callback: (value) => cardinalDirections[value] || (value % 45 === 0 ? `${value}°` : '')
+                            callback: (valueIndex) => {
+                                const az = labels[valueIndex];
+                                if (az === undefined) return '';
+                                const cardinal = getCardinalLabel(az);
+                                if (cardinal) return cardinal;
+                                if (Math.round(az) % 45 === 0) return `${Math.round(az)}°`;
+                                return '';
+                            }
                         }
                     },
                     y: {
@@ -239,8 +261,9 @@ export class HorizonChartManager {
                 },
                 onHover: (event, elements) => {
                     if (this.onPointHover && elements && elements.length > 0) {
-                        const az = elements[0].index;
-                        const info = this.currentHorizonData ? this.currentHorizonData[az] : null;
+                        const idx = elements[0].index;
+                        const az = labels[idx];
+                        const info = this.currentHorizonData ? this.currentHorizonData[idx] : null;
                         this.onPointHover(az, info);
                     }
                 }

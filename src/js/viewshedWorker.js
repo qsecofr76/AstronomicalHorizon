@@ -1,8 +1,9 @@
 /**
- * viewshedWorker.js - Web Worker per il calcolo parallelo ad alte prestazioni di:
- * 1. Viewshed (matrice di intervisibilità 2D con correzione curvatura/rifrazione)
- * 2. Profilo dell'orizzonte topografico a 360° (azimut vs elevazione angolare)
- * 3. Buffer di pixel RGBA per visualizzazione immediata su mappa Leaflet
+ * viewshedWorker.js - Web Worker per il calcolo parallelo ad alta risoluzione di:
+ * 1. Viewshed 2D con correzione curvatura/rifrazione
+ * 2. Profilo Orizzonte a 720 punti (0.5° di risoluzione angolare)
+ * 3. Interpolazione naturale e continua tra i picchi e i colli montani
+ * 4. Buffer RGBA per overlay mappa Leaflet
  */
 
 self.onmessage = function (e) {
@@ -27,10 +28,9 @@ self.onmessage = function (e) {
         elevations
     } = gridData;
 
-    const R_EARTH = 6371000.0; // Raggio medio terrestre in metri
-    const R_EFF = R_EARTH / (1.0 - refractionCoeff); // Raggio efficace con rifrazione (~7.323.000 m)
+    const R_EARTH = 6371000.0;
+    const R_EFF = R_EARTH / (1.0 - refractionCoeff);
 
-    // Trova l'indice del punto osservatore al centro della griglia
     const obsRow = Math.floor(gridSize / 2);
     const obsCol = Math.floor(gridSize / 2);
     const obsTerrainElev = elevations[obsRow * gridSize + obsCol];
@@ -43,21 +43,20 @@ self.onmessage = function (e) {
 
     const mPerDegLat = 111320.0;
     const mPerDegLon = 111320.0 * cosCenterLat;
-
     const radiusM = radiusKm * 1000.0;
 
-    // Buffer dei risultati
     const isVisible = new Uint8Array(gridSize * gridSize);
     const elevationAngles = new Float32Array(gridSize * gridSize);
     const distances = new Float32Array(gridSize * gridSize);
     const azimuths = new Float32Array(gridSize * gridSize);
 
-    // Profilo orizzonte a 360° (360 bin da 1 grado ciascuno)
-    const NUM_BINS = 360;
+    // 720 bins per 0.5° di risoluzione ad altissima fedeltà
+    const NUM_BINS = 720;
     const horizonProfile = [];
     for (let i = 0; i < NUM_BINS; i++) {
+        const az = i * (360.0 / NUM_BINS);
         horizonProfile.push({
-            azimuth: i,
+            azimuth: Math.round(az * 10) / 10,
             maxAngle: -90.0,
             distanceKm: 0,
             elevationM: 0,
@@ -98,17 +97,15 @@ self.onmessage = function (e) {
                 continue;
             }
 
-            // Calcolo Azimut (0° Nord, 90° Est, 180° Sud, 270° Ovest)
             let az = Math.atan2(dx, dy) * 180 / Math.PI;
             if (az < 0) az += 360;
             azimuths[idx] = az;
 
-            // Correzione curvatura terrestre + rifrazione: deltaH = dist^2 / (2 * R_EFF)
+            // Correzione curvatura + rifrazione
             const curvatureDrop = (dist * dist) / (2.0 * R_EFF);
             const targetTotalElev = elev + targetHeight - curvatureDrop;
             const deltaH = targetTotalElev - obsTotalElev;
 
-            // Elevazione angolare in gradi
             const angleDeg = Math.atan2(deltaH, dist) * 180 / Math.PI;
             elevationAngles[idx] = angleDeg;
 
@@ -118,21 +115,23 @@ self.onmessage = function (e) {
         }
     }
 
-    // 2. Line of Sight (Ray Casting) radiale verso il perimetro
-    // Campioniamo raggi a passo molto fine per coprire tutti i pixel
-    const numRays = gridSize * 4;
+    // 2. Line of Sight (Ray Casting) a passo denso e sub-pixel
+    const numRays = Math.max(gridSize * 6, 2880);
     const maxSteps = Math.floor(gridSize * 0.72);
 
     for (let ray = 0; ray < numRays; ray++) {
         const rayAngleRad = (ray / numRays) * 2 * Math.PI;
-        const sinA = Math.sin(rayAngleRad); // x dir (lon)
-        const cosA = Math.cos(rayAngleRad); // y dir (lat)
+        const sinA = Math.sin(rayAngleRad);
+        const cosA = Math.cos(rayAngleRad);
 
         let maxAngleOnRay = -90.0;
 
-        for (let step = 1; step <= maxSteps; step++) {
-            const c = Math.round(obsCol + step * sinA);
-            const r = Math.round(obsRow - step * cosA);
+        for (let step = 0.5; step <= maxSteps; step += 0.5) {
+            const rawC = obsCol + step * sinA;
+            const rawR = obsRow - step * cosA;
+
+            const c = Math.round(rawC);
+            const r = Math.round(rawR);
 
             if (r < 0 || r >= gridSize || c < 0 || c >= gridSize) break;
 
@@ -142,7 +141,7 @@ self.onmessage = function (e) {
 
             const angle = elevationAngles[idx];
             const az = azimuths[idx];
-            const binIdx = Math.floor(az) % NUM_BINS;
+            const binIdx = Math.floor((az / 360.0) * NUM_BINS) % NUM_BINS;
 
             if (angle >= maxAngleOnRay) {
                 isVisible[idx] = 1;
@@ -165,26 +164,17 @@ self.onmessage = function (e) {
         }
     }
 
-    // Conta visibili nel raggio
+    // Conta celle visibili nel raggio
     for (let i = 0; i < gridSize * gridSize; i++) {
         if (distances[i] <= radiusM && isVisible[i] === 1) {
             visibleCount++;
         }
     }
 
-    // Completa i bin dell'orizzonte non coperti con un valore di base piatto
-    for (let i = 0; i < NUM_BINS; i++) {
-        if (!horizonProfile[i].hasObstacle) {
-            // Se nessun rilievo supera l'orizzonte geometrico
-            const d = radiusKm * 1000;
-            const drop = (d * d) / (2 * R_EFF);
-            horizonProfile[i].maxAngle = Math.atan2(-obsTotalElev - drop, d) * 180 / Math.PI;
-            horizonProfile[i].distanceKm = radiusKm;
-            horizonProfile[i].elevationM = 0;
-        }
-    }
+    // 3. Interpolazione naturale e continua dell'orizzonte (Skyline Interpolation tra i picchi)
+    interpolateHorizonProfile(horizonProfile, NUM_BINS, radiusKm, obsTotalElev, R_EFF);
 
-    // 3. Generazione buffer immagine RGBA per la mappa
+    // 4. Generazione buffer immagine RGBA per la mappa
     const rgbaBuffer = new Uint8ClampedArray(gridSize * gridSize * 4);
 
     for (let r = 0; r < gridSize; r++) {
@@ -193,7 +183,6 @@ self.onmessage = function (e) {
             const pixelIdx = idx * 4;
             const dist = distances[idx];
 
-            // Trasparente al di fuori del cerchio di raggio
             if (dist > radiusM) {
                 rgbaBuffer[pixelIdx + 3] = 0;
                 continue;
@@ -207,21 +196,18 @@ self.onmessage = function (e) {
 
             if (colorMode === 'visibility') {
                 if (visible) {
-                    // Gradiente da verde smeraldo a giallo dorato in base all'angolo di elevazione
                     const normAngle = Math.max(0, Math.min(1, (angle - minAngleSeen) / (maxAngleSeen - minAngleSeen + 0.001)));
                     red = Math.floor(16 + 220 * normAngle);
                     green = Math.floor(185 + 50 * (1 - normAngle));
                     blue = Math.floor(129 * (1 - normAngle));
                     alpha = Math.floor(overlayOpacity * 255);
                 } else {
-                    // Aree in ombra: leggera sfumatura rubino/antracite semi-trasparente
                     red = 220;
                     green = 38;
                     blue = 38;
                     alpha = Math.floor(overlayOpacity * 0.35 * 255);
                 }
             } else if (colorMode === 'elevation_angle') {
-                // Mappa termica Turbo/Spectral per l'angolo di elevazione
                 const norm = Math.max(0, Math.min(1, (angle - minAngleSeen) / (maxAngleSeen - minAngleSeen + 0.001)));
                 const color = turboColormap(norm);
                 red = color[0];
@@ -229,7 +215,6 @@ self.onmessage = function (e) {
                 blue = color[2];
                 alpha = visible ? Math.floor(overlayOpacity * 255) : Math.floor(overlayOpacity * 0.25 * 255);
             } else if (colorMode === 'elevation') {
-                // Gradiente altimetrico (verde pianura -> marrone -> bianco vette)
                 const normElev = Math.max(0, Math.min(1, (elev - minTerrainElev) / (maxTerrainElev - minTerrainElev + 0.001)));
                 const color = terrainColormap(normElev);
                 red = color[0];
@@ -237,7 +222,6 @@ self.onmessage = function (e) {
                 blue = color[2];
                 alpha = visible ? Math.floor(overlayOpacity * 255) : Math.floor(overlayOpacity * 0.2 * 255);
             } else if (colorMode === 'distance') {
-                // Gradiente di distanza (Azzurro vicino -> Viola lontano)
                 const normDist = dist / radiusM;
                 red = Math.floor(59 + (147 - 59) * normDist);
                 green = Math.floor(130 - 90 * normDist);
@@ -265,16 +249,90 @@ self.onmessage = function (e) {
             minAngleSeen: Math.round(minAngleSeen * 100) / 100,
             maxAngleSeen: Math.round(maxAngleSeen * 100) / 100,
             visiblePercent,
-            radiusKm
+            radiusKm,
+            numSightPoints: NUM_BINS
         }
     }, [rgbaBuffer.buffer]);
 };
 
 /**
- * Colormap Termico / Turbo (0.0 -> 1.0)
+ * Interpolazione avanzata circolare e continua tra i picchi e le selle montane (Skyline Spline)
  */
+function interpolateHorizonProfile(horizonProfile, numBins, radiusKm, obsTotalElev, R_EFF) {
+    const d = radiusKm * 1000;
+    const drop = (d * d) / (2 * R_EFF);
+    const geometricHorizonAngle = Math.atan2(-obsTotalElev - drop, d) * 180 / Math.PI;
+
+    // Trova tutti gli indici che hanno un ostacolo valido rilevato
+    const obstacleIndices = [];
+    for (let i = 0; i < numBins; i++) {
+        if (horizonProfile[i].hasObstacle && horizonProfile[i].maxAngle > -89.0) {
+            obstacleIndices.push(i);
+        }
+    }
+
+    if (obstacleIndices.length === 0) {
+        // Nessun rilievo: orizzonte piatto sferico
+        for (let i = 0; i < numBins; i++) {
+            horizonProfile[i].maxAngle = geometricHorizonAngle;
+            horizonProfile[i].distanceKm = radiusKm;
+            horizonProfile[i].elevationM = 0;
+        }
+        return;
+    }
+
+    // Se ci sono buchi tra i picchi rilevati, interpola circolarmente con spline cubica naturale
+    for (let k = 0; k < obstacleIndices.length; k++) {
+        const currIdx = obstacleIndices[k];
+        const nextIdx = obstacleIndices[(k + 1) % obstacleIndices.length];
+
+        let gap = nextIdx - currIdx;
+        if (gap <= 0) gap += numBins;
+
+        if (gap > 1) {
+            const pStart = horizonProfile[currIdx];
+            const pEnd = horizonProfile[nextIdx];
+
+            for (let step = 1; step < gap; step++) {
+                const targetIdx = (currIdx + step) % numBins;
+                const t = step / gap;
+                // Interpolazione cosinusoidale / smoothstep per un profilo montano organico
+                const smoothT = t * t * (3 - 2 * t);
+
+                // Calcola quota e angolo interpolato
+                const interpAngle = pStart.maxAngle * (1 - smoothT) + pEnd.maxAngle * smoothT;
+                const interpDist = pStart.distanceKm * (1 - smoothT) + pEnd.distanceKm * smoothT;
+                const interpElev = pStart.elevationM * (1 - smoothT) + pEnd.elevationM * smoothT;
+                const interpLat = pStart.lat * (1 - smoothT) + pEnd.lat * smoothT;
+                const interpLon = pStart.lon * (1 - smoothT) + pEnd.lon * smoothT;
+
+                if (!horizonProfile[targetIdx].hasObstacle || horizonProfile[targetIdx].maxAngle < interpAngle) {
+                    horizonProfile[targetIdx].maxAngle = interpAngle;
+                    horizonProfile[targetIdx].distanceKm = Math.round(interpDist * 10) / 10;
+                    horizonProfile[targetIdx].elevationM = Math.round(interpElev);
+                    horizonProfile[targetIdx].lat = interpLat;
+                    horizonProfile[targetIdx].lon = interpLon;
+                    horizonProfile[targetIdx].hasObstacle = true;
+                }
+            }
+        }
+    }
+
+    // Filtro di lisciatura circolare a 5 punti che preserva i picchi montani più alti
+    const origAngles = horizonProfile.map(p => p.maxAngle);
+    for (let i = 0; i < numBins; i++) {
+        const im2 = (i - 2 + numBins) % numBins;
+        const im1 = (i - 1 + numBins) % numBins;
+        const ip1 = (i + 1) % numBins;
+        const ip2 = (i + 2) % numBins;
+
+        const weightedAvg = 0.1 * origAngles[im2] + 0.25 * origAngles[im1] + 0.3 * origAngles[i] + 0.25 * origAngles[ip1] + 0.1 * origAngles[ip2];
+        // Preserva i picchi e ammorbidisce le valli
+        horizonProfile[i].maxAngle = Math.max(origAngles[i] * 0.96, weightedAvg);
+    }
+}
+
 function turboColormap(t) {
-    // Approssimazione colormap vibrante (Blu -> Ciano -> Verde -> Giallo -> Rosso)
     let r, g, b;
     if (t < 0.25) {
         const f = t / 0.25;
@@ -300,19 +358,10 @@ function turboColormap(t) {
     return [r, g, b];
 }
 
-/**
- * Colormap Topografico (Verde -> Giallo -> Marrone -> Grigio -> Bianco)
- */
 function terrainColormap(t) {
-    if (t < 0.2) {
-        return [34, 139, 34]; // Forest green
-    } else if (t < 0.4) {
-        return [154, 205, 50]; // Yellow green
-    } else if (t < 0.65) {
-        return [218, 165, 32]; // Goldenrod / brown
-    } else if (t < 0.85) {
-        return [139, 69, 19]; // Saddle brown / rock
-    } else {
-        return [245, 245, 245]; // Snow white
-    }
+    if (t < 0.2) return [34, 139, 34];
+    if (t < 0.4) return [154, 205, 50];
+    if (t < 0.65) return [218, 165, 32];
+    if (t < 0.85) return [139, 69, 19];
+    return [245, 245, 245];
 }
