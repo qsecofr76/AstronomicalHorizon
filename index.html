@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astronomical Horizon & Viewshed Analyzer</title>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    
+    <!-- App Stylesheet -->
+    <link rel="stylesheet" href="./src/css/style.css">
+</head>
+<body>
+    <!-- Intestazione Principale -->
+    <header class="app-header">
+        <div class="brand">
+            <i class="fas fa-mountain-sun"></i>
+            <span>Astronomical Horizon & Viewshed Analyzer</span>
+        </div>
+        <div class="header-status">
+            <span id="hoverCoords">Passa il cursore sulla mappa per le coordinate</span>
+            <span class="badge">DEM AWS Terrarium</span>
+        </div>
+    </header>
+
+    <div class="app-container">
+        <!-- Barra Laterale Controlli -->
+        <aside class="sidebar">
+            <!-- Sezione Ricerca e Preset -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    <i class="fas fa-search-location"></i>
+                    <span>Cerca o Seleziona Luogo</span>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="locationSearch" placeholder="Cerca es. Courmayeur, Etna, Roma...">
+                    <button class="btn btn-primary" id="searchBtn" title="Cerca con Nominatim">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+                <select id="presetSelect">
+                    <option value="">-- Seleziona un panorama notevole --</option>
+                    <option value="45.8326,6.8652,Monte Bianco">🏔️ Monte Bianco (Valle d'Aosta / 4808 m)</option>
+                    <option value="45.9369,7.8668,Monte Rosa">🏔️ Monte Rosa / Dufourspitze (4634 m)</option>
+                    <option value="45.9763,7.6586,Cervino">⛰️ Cervino / Matterhorn (4478 m)</option>
+                    <option value="46.4340,11.8517,Marmolada">🏔️ Marmolada - Dolomiti (3343 m)</option>
+                    <option value="42.4700,13.5658,Corno Grande">⛰️ Gran Sasso / Corno Grande (2912 m)</option>
+                    <option value="40.8214,14.4260,Vesuvio">🌋 Vesuvio (Golfo di Napoli / 1281 m)</option>
+                    <option value="37.7510,14.9934,Etna">🌋 Monte Etna (Sicilia / 3357 m)</option>
+                    <option value="45.0805,7.7675,Superga">⛪ Basilica di Superga (Torino / 672 m)</option>
+                    <option value="51.1788,-1.8262,Stonehenge">🏛️ Stonehenge (Regno Unito / 102 m)</option>
+                </select>
+            </div>
+
+            <!-- Scheda Punto Osservatore -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    <i class="fas fa-crosshairs"></i>
+                    <span>Punto di Osservazione</span>
+                </div>
+                <div class="info-card">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Latitudine</span>
+                            <span class="info-val" id="obsLat">45.8326°</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Longitudine</span>
+                            <span class="info-val" id="obsLon">6.8652°</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Quota Terreno</span>
+                            <span class="info-val highlight" id="obsElev">-- m</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Altitudine Totale</span>
+                            <span class="info-val highlight" id="statTotalElev">-- m</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parametri di Calcolo Visibilità -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    <i class="fas fa-sliders-h"></i>
+                    <span>Parametri di Analisi</span>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-header">
+                        <span>Raggio di Visibilità</span>
+                        <span class="control-val" id="radiusVal">15 km</span>
+                    </div>
+                    <input type="range" id="radiusSlider" min="3" max="50" step="1" value="15">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-header">
+                        <span>Altezza Occhi Osservatore</span>
+                        <span class="control-val" id="heightVal">1.8 m</span>
+                    </div>
+                    <input type="range" id="heightSlider" min="0" max="50" step="0.5" value="1.8">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-header">
+                        <span>Modalità Colore Mappa Rilievi</span>
+                    </div>
+                    <select id="colorModeSelect">
+                        <option value="visibility">👁️ Intervisibilità (Visibile / Nascosto)</option>
+                        <option value="elevation_angle">🌡️ Termico - Gradi Elevazione Angolare</option>
+                        <option value="elevation">⛰️ Topografico - Quota Rilievi</option>
+                        <option value="distance">🌐 Gradiente di Distanza</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-header">
+                        <span>Opacità Mappa Visibilità</span>
+                        <span class="control-val" id="opacityVal">65%</span>
+                    </div>
+                    <input type="range" id="opacitySlider" min="0.1" max="1.0" step="0.05" value="0.65">
+                </div>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" id="toggleOverlay" checked>
+                    <span>Mostra mappa colorata dei rilievi</span>
+                </label>
+
+                <label class="checkbox-label">
+                    <input type="checkbox" id="toggleSunPaths" checked>
+                    <span>Mostra traiettorie solari (Solstizi / Equinozi)</span>
+                </label>
+            </div>
+
+            <!-- Statistiche del Territorio -->
+            <div class="sidebar-section">
+                <div class="section-title">
+                    <i class="fas fa-chart-pie"></i>
+                    <span>Analisi Territorio & Orizzonte</span>
+                </div>
+                <div class="info-card">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Quota Base</span>
+                            <span class="info-val" id="statObsElev">--</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Area Visibile</span>
+                            <span class="info-val highlight" id="statVisiblePct">--%</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Quota Min</span>
+                            <span class="info-val" id="statMinElev">--</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Quota Max Vette</span>
+                            <span class="info-val" id="statMaxElev">--</span>
+                        </div>
+                        <div class="info-item" style="grid-column: span 2;">
+                            <span class="info-label">Elevazione Angolare Max Orizzonte</span>
+                            <span class="info-val highlight" id="statMaxAngle">--°</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" id="recalculateBtn" style="width: 100%; margin-top: 12px;">
+                    <i class="fas fa-sync-alt"></i> Ricalcola Orizzonte
+                </button>
+            </div>
+
+            <!-- Esportazione Dati -->
+            <div class="sidebar-section" style="border-bottom: none;">
+                <div class="section-title">
+                    <i class="fas fa-file-export"></i>
+                    <span>Esportazione Dati</span>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-sm" id="exportCsvBtn" title="Esporta coordinate e angoli a 360°">
+                        <i class="fas fa-file-csv"></i> Profilo CSV
+                    </button>
+                    <button class="btn btn-sm" id="exportJsonBtn" title="Esporta metadati e orizzonte completo in JSON">
+                        <i class="fas fa-file-code"></i> Dati JSON
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Area Mappa e Grafico -->
+        <main class="main-view">
+            <!-- Mappa Leaflet -->
+            <div id="map"></div>
+
+            <!-- Pannello Orizzonte Astronomico Inferiore -->
+            <div class="chart-panel" id="horizonPanel">
+                <div class="chart-header" id="toggleChartHeader">
+                    <div class="chart-title">
+                        <i class="fas fa-mountain"></i>
+                        <span>Profilo Orizzonte Topografico & Astronomico a 360° (Nord &rarr; Est &rarr; Sud &rarr; Ovest)</span>
+                    </div>
+                    <div class="chart-actions">
+                        <button class="btn btn-sm" id="exportChartBtn" title="Scarica immagine del grafico">
+                            <i class="fas fa-camera"></i> Salva Grafico PNG
+                        </button>
+                    </div>
+                </div>
+                <div class="chart-body">
+                    <canvas id="horizonChartCanvas"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Overlay Caricamento -->
+    <div class="loader-overlay hidden" id="loaderOverlay">
+        <div class="spinner"></div>
+        <div class="loader-text" id="loaderText">Caricamento dati altimetrici in corso...</div>
+    </div>
+
+    <!-- Contenitore Notifiche Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Script Applicazione Principale -->
+    <script type="module" src="./src/js/main.js"></script>
+</body>
+</html>
