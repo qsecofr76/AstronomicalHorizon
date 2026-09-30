@@ -92,7 +92,7 @@
             <div class="sidebar-section">
                 <div class="section-title">
                     <i class="fas fa-sliders-h"></i>
-                    <span>Parametri di Analisi</span>
+                    <span>Parametri di Analisi & Raggiera</span>
                 </div>
                 
                 <div class="control-group">
@@ -113,27 +113,42 @@
 
                 <div class="control-group">
                     <div class="control-header">
-                        <span>Modalità Colore Mappa Rilievi</span>
+                        <span>Magnificazione Profilo Altimetrico</span>
+                        <span class="control-val" id="magnificationVal">2.0x</span>
                     </div>
-                    <select id="colorModeSelect">
-                        <option value="visibility">👁️ Intervisibilità (Visibile / Nascosto)</option>
-                        <option value="elevation_angle">🌡️ Termico - Gradi Elevazione Angolare</option>
-                        <option value="elevation">⛰️ Topografico - Quota Rilievi</option>
-                        <option value="distance">🌐 Gradiente di Distanza</option>
-                    </select>
+                    <input type="range" id="magnificationSlider" min="1.0" max="5.0" step="0.5" value="2.0">
                 </div>
 
                 <div class="control-group">
                     <div class="control-header">
-                        <span>Opacità Mappa Visibilità</span>
-                        <span class="control-val" id="opacityVal">65%</span>
+                        <span>Visualizzazione Mappa</span>
                     </div>
-                    <input type="range" id="opacitySlider" min="0.1" max="1.0" step="0.05" value="0.65">
+                    <select id="colorModeSelect">
+                        <option value="raggiera_horizon" selected>☀️ Raggiera Orizzonte Massimo (Rosso &gt; 20°, Verde &lt; 15°)</option>
+                        <option value="visibility">👁️ Intervisibilità Territoriale Completa</option>
+                        <option value="elevation_angle">🌡️ Termico - Gradi Elevazione Angolare</option>
+                        <option value="elevation">⛰️ Topografico - Quota Rilievi</option>
+                        <option value="distance">🌐 Gradiente di Distanza</option>
+                    </select>
+
+                    <div class="legend-pills">
+                        <span class="pill-red">🔴 &ge; 20° Rilievo Alto</span>
+                        <span class="pill-amber">🟠 15°-20° Rilievo Medio</span>
+                        <span class="pill-green">🟢 &lt; 15° Rilievo Basso</span>
+                    </div>
+                </div>
+
+                <div class="control-group" style="margin-top: 10px;">
+                    <div class="control-header">
+                        <span>Opacità Raggiera / Mappa</span>
+                        <span class="control-val" id="opacityVal">70%</span>
+                    </div>
+                    <input type="range" id="opacitySlider" min="0.1" max="1.0" step="0.05" value="0.70">
                 </div>
 
                 <label class="checkbox-label">
                     <input type="checkbox" id="toggleOverlay" checked>
-                    <span>Mostra mappa colorata dei rilievi</span>
+                    <span>Mostra raggiera / mappa rilievi</span>
                 </label>
 
                 <label class="checkbox-label">
@@ -208,8 +223,11 @@
                         <span>Profilo Orizzonte Topografico & Astronomico a 360° (Nord &rarr; Est &rarr; Sud &rarr; Ovest)</span>
                     </div>
                     <div class="chart-actions">
+                        <button class="btn btn-sm" id="expandChartBtn" title="Ingrandisci o riduci l'altezza del grafico">
+                            <i class="fas fa-expand-alt"></i> Espandi Grafico
+                        </button>
                         <button class="btn btn-sm" id="exportChartBtn" title="Scarica immagine del grafico">
-                            <i class="fas fa-camera"></i> Salva Grafico PNG
+                            <i class="fas fa-camera"></i> Salva PNG
                         </button>
                     </div>
                 </div>

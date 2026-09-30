@@ -1,7 +1,7 @@
 /**
  * map.js - Gestione della mappa OpenStreetMap con Leaflet
- * Gestisce i layer di base, il marker dell'osservatore, l'overlay canvas del Viewshed
- * e il raggio di analisi.
+ * Gestisce i layer di base, il marker dell'osservatore, l'overlay della raggiera
+ * e il contorno perimetrale delle vette dell'orizzonte.
  */
 
 export class MapManager {
@@ -15,7 +15,7 @@ export class MapManager {
         this.radiusCircle = null;
         this.viewshedOverlay = null;
         this.sightlineLayer = null;
-        this.peakMarker = null;
+        this.horizonPerimeterLayer = null;
 
         this.currentObserver = {
             lat: 45.8326, // Default: Monte Bianco
@@ -72,7 +72,8 @@ export class MapManager {
         // Scala metrica
         L.control.scale({ imperial: false, metric: true, position: 'bottomleft' }).addTo(this.map);
 
-        // Layer per linea di vista e picco
+        // Layer per contorno perimetrale orizzonte e linea di vista
+        this.horizonPerimeterLayer = L.layerGroup().addTo(this.map);
         this.sightlineLayer = L.layerGroup().addTo(this.map);
 
         // Icona personalizzata per l'osservatore
@@ -139,9 +140,9 @@ export class MapManager {
         } else {
             this.radiusCircle = L.circle(center, {
                 radius: radiusM,
-                color: '#38bdf8',
-                weight: 1.5,
-                dashArray: '5, 5',
+                color: 'rgba(56, 189, 248, 0.4)',
+                weight: 1.2,
+                dashArray: '4, 4',
                 fill: false,
                 interactive: false
             }).addTo(this.map);
@@ -149,9 +150,9 @@ export class MapManager {
     }
 
     /**
-     * Applica l'overlay grafico RGBA del Viewshed sulla mappa
+     * Applica l'overlay grafico della raggiera/viewshed sulla mappa
      */
-    updateViewshedOverlay(rgbaBuffer, gridData, opacity = 0.65) {
+    updateViewshedOverlay(rgbaBuffer, gridData, opacity = 0.70, horizonProfile = null) {
         const L = window.L;
         if (!this.map || !L) return;
 
@@ -179,6 +180,28 @@ export class MapManager {
                 interactive: false
             }).addTo(this.map);
         }
+
+        // Traccia il perimetro della cresta dell'orizzonte
+        if (horizonProfile && this.horizonPerimeterLayer) {
+            this.horizonPerimeterLayer.clearLayers();
+            const points = [];
+            horizonProfile.forEach(p => {
+                if (p.lat && p.lon && p.hasObstacle) {
+                    points.push([p.lat, p.lon]);
+                }
+            });
+
+            if (points.length > 2) {
+                points.push(points[0]); // Chiudi il perimetro
+                L.polyline(points, {
+                    color: '#38bdf8',
+                    weight: 1.5,
+                    dashArray: '3, 3',
+                    opacity: 0.75,
+                    interactive: false
+                }).addTo(this.horizonPerimeterLayer);
+            }
+        }
     }
 
     setOverlayOpacity(opacity) {
@@ -191,8 +214,10 @@ export class MapManager {
         if (this.viewshedOverlay) {
             if (visible) {
                 this.viewshedOverlay.addTo(this.map);
+                if (this.horizonPerimeterLayer) this.horizonPerimeterLayer.addTo(this.map);
             } else {
                 this.map.removeLayer(this.viewshedOverlay);
+                if (this.horizonPerimeterLayer) this.map.removeLayer(this.horizonPerimeterLayer);
             }
         }
     }
@@ -210,23 +235,34 @@ export class MapManager {
         const obsLatLng = [this.currentObserver.lat, this.currentObserver.lon];
         const peakLatLng = [info.lat, info.lon];
 
-        // Linea di vista
-        const line = L.polyline([obsLatLng, peakLatLng], {
-            color: '#fbbf24',
-            weight: 2.5,
-            dashArray: '4, 4'
+        // Colore coordinato in base all'angolo (Rosso > 20°, Verde < 15°)
+        let targetColor = '#10b981'; // Verde (< 15°)
+        let statusBadge = '<span style="color:#10b981;">● Rilievo Basso (&lt; 15°)</span>';
+        if (info.maxAngle >= 20.0) {
+            targetColor = '#ef4444'; // Rosso (>= 20°)
+            statusBadge = '<span style="color:#ef4444;">● Rilievo Alto (&ge; 20°)</span>';
+        } else if (info.maxAngle >= 15.0) {
+            targetColor = '#f59e0b'; // Arancio (15° - 20°)
+            statusBadge = '<span style="color:#f59e0b;">● Rilievo Medio (15°-20°)</span>';
+        }
+
+        // Linea di vista verso il punto di blocco
+        L.polyline([obsLatLng, peakLatLng], {
+            color: targetColor,
+            weight: 3,
+            dashArray: '5, 4'
         }).addTo(this.sightlineLayer);
 
         // Marker sulla vetta
         const peakIcon = L.divIcon({
             className: 'peak-target-icon',
-            html: `<div class="peak-dot"><i class="fas fa-mountain"></i></div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
+            html: `<div class="peak-dot" style="background:${targetColor}; box-shadow:0 0 12px ${targetColor};"><i class="fas fa-mountain"></i></div>`,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
         });
 
-        const peakMarker = L.marker(peakLatLng, { icon: peakIcon })
-            .bindTooltip(`<b>Vetta Orizzonte (Azimut ${azimuth}°)</b><br>Quota: ${info.elevationM} m<br>Distanza: ${info.distanceKm} km<br>Angolo: +${info.maxAngle.toFixed(2)}°`, {
+        L.marker(peakLatLng, { icon: peakIcon })
+            .bindTooltip(`<b>Rilievo Orizzonte (Azimut ${azimuth}°)</b><br>${statusBadge}<br>Inclinazione: <b>+${info.maxAngle.toFixed(2)}°</b><br>Quota Vetta: ${info.elevationM} m<br>Distanza: ${info.distanceKm} km`, {
                 permanent: false,
                 direction: 'top'
             })

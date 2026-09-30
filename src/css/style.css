@@ -11,9 +11,9 @@
     --accent-blue: #38bdf8;
     --accent-green: #10b981;
     --accent-amber: #f59e0b;
-    --accent-rose: #f43f5e;
+    --accent-rose: #ef4444;
     --sidebar-width: 380px;
-    --chart-height: 250px;
+    --chart-height: 290px;
 }
 
 * {
@@ -180,6 +180,44 @@ input[type="text"]:focus, select:focus {
     margin-top: 10px;
 }
 
+/* Legend Pills */
+.legend-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.pill-red {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+    font-size: 0.72rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.pill-amber {
+    background: rgba(245, 158, 11, 0.2);
+    border: 1px solid #f59e0b;
+    color: #fcd34d;
+    font-size: 0.72rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.pill-green {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid #10b981;
+    color: #6ee7b7;
+    font-size: 0.72rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
 /* Observer Card */
 .info-card {
     background: var(--bg-secondary);
@@ -276,19 +314,22 @@ input[type="range"] {
     transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.chart-panel.expanded {
+    height: 480px;
+}
+
 .chart-panel.collapsed {
     height: 38px;
 }
 
 .chart-header {
-    height: 38px;
+    height: 40px;
     padding: 0 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid var(--border-color);
     background: rgba(30, 41, 59, 0.5);
-    cursor: pointer;
 }
 
 .chart-title {
@@ -303,7 +344,7 @@ input[type="range"] {
 .chart-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .chart-body {
@@ -357,17 +398,17 @@ input[type="range"] {
 }
 
 .peak-target-icon .peak-dot {
-    width: 24px;
-    height: 24px;
-    background: #f59e0b;
+    width: 26px;
+    height: 26px;
+    background: #ef4444;
     border: 2px solid #ffffff;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #1e293b;
+    color: #ffffff;
     font-size: 11px;
-    box-shadow: 0 0 10px rgba(245, 158, 11, 0.9);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.9);
 }
 
 /* Loader Overlay */

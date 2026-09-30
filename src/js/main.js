@@ -23,9 +23,10 @@ class AstronomicalHorizonApp {
             radiusKm: 15,
             observerHeight: 1.8,
             targetHeight: 0.0,
-            colorMode: 'visibility',
+            colorMode: 'raggiera_horizon', // Nuova modalità predefinita richiesta dall'utente
+            verticalMagnification: 2.0,
             refractionCoeff: 0.13,
-            overlayOpacity: 0.65,
+            overlayOpacity: 0.70,
             showSunPaths: true
         };
 
@@ -95,6 +96,19 @@ class AstronomicalHorizonApp {
         });
         heightSlider.addEventListener('change', () => this.recalculate(false));
 
+        // Slider Magnificazione Profilo
+        const magSlider = document.getElementById('magnificationSlider');
+        const magVal = document.getElementById('magnificationVal');
+        if (magSlider && magVal) {
+            magSlider.addEventListener('input', (e) => {
+                this.params.verticalMagnification = parseFloat(e.target.value);
+                magVal.textContent = `${this.params.verticalMagnification.toFixed(1)}x`;
+                if (this.chartManager) {
+                    this.chartManager.setMagnification(this.params.verticalMagnification);
+                }
+            });
+        }
+
         const opacitySlider = document.getElementById('opacitySlider');
         const opacityVal = document.getElementById('opacityVal');
         opacitySlider.addEventListener('input', (e) => {
@@ -127,11 +141,30 @@ class AstronomicalHorizonApp {
             });
         }
 
+        // Tasto Espandi / Riduci Grafico
+        const expandChartBtn = document.getElementById('expandChartBtn');
+        const horizonPanel = document.getElementById('horizonPanel');
+        if (expandChartBtn && horizonPanel) {
+            expandChartBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                horizonPanel.classList.toggle('expanded');
+                const isExpanded = horizonPanel.classList.contains('expanded');
+                expandChartBtn.innerHTML = isExpanded
+                    ? '<i class="fas fa-compress-alt"></i> Riduci Grafico'
+                    : '<i class="fas fa-expand-alt"></i> Espandi Grafico';
+                setTimeout(() => {
+                    if (this.chartManager && this.chartManager.chart) {
+                        this.chartManager.chart.resize();
+                    }
+                }, 310);
+            });
+        }
+
         // Preset Località Note
         const presetSelect = document.getElementById('presetSelect');
         presetSelect.addEventListener('change', (e) => {
             if (!e.target.value) return;
-            const [lat, lon, name] = e.target.value.split(',');
+            const [lat, lon] = e.target.value.split(',');
             const pLat = parseFloat(lat);
             const pLon = parseFloat(lon);
             this.mapManager.panTo(pLat, pLon, 11);
@@ -206,8 +239,9 @@ class AstronomicalHorizonApp {
 
     /**
      * Esegue il calcolo completo:
-     * 1. Recupero matrice DEM
-     * 2. Lancio Worker per viewshed e profilo orizzonte
+     * 1. Recupero quota osservatore istantanea
+     * 2. Recupero matrice DEM ad alta risoluzione
+     * 3. Lancio Worker per raggiera e profilo orizzonte
      */
     async runViewshedCalculation(lat, lon) {
         if (this.isCalculating) return;
@@ -222,11 +256,11 @@ class AstronomicalHorizonApp {
             this.updateObserverElevationDisplay(lat, lon, obsElevation);
 
             // 2. Recupero griglia di elevazione DEM ad alta risoluzione
-            this.setLoading(true, 'Generazione raster altimetrico del territorio ad alta risoluzione...');
+            this.setLoading(true, 'Generazione raster altimetrico ad alta risoluzione...');
             this.currentGridData = await this.demProvider.getElevationGrid(lat, lon, this.params.radiusKm, 420);
 
-            // 3. Invio al Web Worker per il calcolo dell'intervisibilità
-            this.setLoading(true, 'Calcolo intervisibilità e orizzonte a 360°...');
+            // 3. Invio al Web Worker per il calcolo della raggiera e intervisibilità
+            this.setLoading(true, 'Calcolo raggiera e orizzonte massimo a 360°...');
             this.worker.postMessage({
                 gridData: this.currentGridData,
                 observerHeight: this.params.observerHeight,
@@ -245,7 +279,7 @@ class AstronomicalHorizonApp {
     }
 
     /**
-     * Ricalcola la vista (se gridData è già in cache, non riscarica i tile DEM a meno che non sia cambiato il raggio)
+     * Ricalcola la vista
      */
     recalculate(forceFetchDEM = false) {
         const obs = this.mapManager.currentObserver;
@@ -254,8 +288,7 @@ class AstronomicalHorizonApp {
         if (forceFetchDEM || !this.currentGridData || this.currentGridData.radiusKm !== this.params.radiusKm) {
             this.runViewshedCalculation(obs.lat, obs.lon);
         } else {
-            // Ricalcola subito nel worker con parametri aggiornati
-            this.setLoading(true, 'Ricalcolo visibilità con nuovi parametri...');
+            this.setLoading(true, 'Ricalcolo raggiera con nuovi parametri...');
             this.worker.postMessage({
                 gridData: this.currentGridData,
                 observerHeight: this.params.observerHeight,
@@ -272,12 +305,12 @@ class AstronomicalHorizonApp {
         this.currentHorizonData = horizonProfile;
         this.currentStats = stats;
 
-        // 1. Aggiorna overlay mappa
+        // 1. Aggiorna overlay mappa con raggiera e perimetro
         if (this.currentGridData) {
-            this.mapManager.updateViewshedOverlay(rgbaBuffer, this.currentGridData, this.params.overlayOpacity);
+            this.mapManager.updateViewshedOverlay(rgbaBuffer, this.currentGridData, this.params.overlayOpacity, horizonProfile);
         }
 
-        // 2. Aggiorna grafico orizzonte 360°
+        // 2. Aggiorna grafico orizzonte 360° con magnificazione
         const obs = this.mapManager.currentObserver;
         this.chartManager.updateChart(horizonProfile, obs.lat, obs.lon);
 
