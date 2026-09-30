@@ -18,8 +18,8 @@ export class MapManager {
         this.horizonPerimeterLayer = null;
 
         this.currentObserver = {
-            lat: 45.8326, // Default: Monte Bianco
-            lon: 6.8652,
+            lat: 46.55744, // Default: Lago di Pramollo - Ristorante da Livio (Passo Pramollo)
+            lon: 13.27853,
             height: 1.8
         };
 

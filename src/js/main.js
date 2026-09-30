@@ -38,9 +38,9 @@ class AstronomicalHorizonApp {
         this.initUI();
         this.initMapAndChart();
         
-        // Calcolo iniziale con posizione predefinita (Monte Bianco)
+        // Calcolo iniziale con posizione predefinita (Lago di Pramollo - Ristorante da Livio)
         setTimeout(() => {
-            this.runViewshedCalculation(45.8326, 6.8652);
+            this.runViewshedCalculation(46.55744, 13.27853);
         }, 500);
     }
 
