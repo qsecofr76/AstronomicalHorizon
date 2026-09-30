@@ -1,7 +1,8 @@
 /**
  * map.js - Gestione della mappa OpenStreetMap con Leaflet
  * Supporta:
- * - Layer cartografici con SkyAtlas 2025 (Inquinamento Luminoso) al posto di CartoDark
+ * - Layer cartografici con SkyAtlas 2025 (Inquinamento Luminoso) ad alta risoluzione continua (maxNativeZoom: 6, maxZoom: 19)
+ * - Mappa Ibrida SkyAtlas Notturna con strade, toponimi, cime montane e confini
  * - Accesso rapido a Google Maps e Google Street View tramite click destro e popup
  * - Raggiera dell'Orizzonte Massimo e contorno perimetrale vette
  */
@@ -56,27 +57,50 @@ export class MapManager {
             attribution: 'Tiles &copy; Esri &mdash; Canvas Dark'
         });
 
-        // 2. Layer Inquinamento Luminoso SkyAtlas 2025 (David J. Lorenz)
-        const skyAtlas2025Base = L.layerGroup([
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }),
-            L.tileLayer('https://djlorenz.github.io/astronomy/image_tiles/tiles2025/tile_{z}_{x}_{y}.png', {
+        // 2. Layer di Riferimento Geografico (Toponimi, Cime, Strade, Confini)
+        const referenceLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            opacity: 0.95
+        });
+
+        const referenceRoads = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            opacity: 0.85
+        });
+
+        // 3. Generatore Layer SkyAtlas 2025 con upscaling automatico oltre il livello nativo
+        // maxNativeZoom: 6 con tileSize 1024px evita che la mappa diventi nera o scompaia zoomando dentro!
+        const createSkyAtlasTileLayer = (opacity = 0.80) => L.tileLayer(
+            'https://djlorenz.github.io/astronomy/image_tiles/tiles2025/tile_{z}_{x}_{y}.png',
+            {
                 tileSize: 1024,
                 zoomOffset: -2,
-                maxZoom: 14,
-                opacity: 0.85,
-                errorTileUrl: 'https://djlorenz.github.io/astronomy/image_tiles/tiles2025/black.png',
+                minZoom: 3,
+                maxNativeZoom: 6,
+                maxZoom: 19,
+                opacity: opacity,
                 attribution: 'Inquinamento Luminoso: &copy; <a href="https://djlorenz.github.io/astronomy/lp2025/" target="_blank">David J. Lorenz (SkyAtlas 2025)</a>'
-            })
+            }
+        );
+
+        // 4. SkyAtlas 2025 Ibrido Notturno: Dark Canvas + Inquinamento Luminoso + Strade + Cime/Toponimi
+        const skyAtlas2025Hybrid = L.layerGroup([
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }),
+            createSkyAtlasTileLayer(0.85),
+            referenceRoads,
+            referenceLabels
         ]);
 
-        const skyAtlas2025Overlay = L.tileLayer('https://djlorenz.github.io/astronomy/image_tiles/tiles2025/tile_{z}_{x}_{y}.png', {
-            tileSize: 1024,
-            zoomOffset: -2,
-            maxZoom: 14,
-            opacity: 0.70,
-            errorTileUrl: 'https://djlorenz.github.io/astronomy/image_tiles/tiles2025/black.png',
-            attribution: 'Inquinamento Luminoso: &copy; <a href="https://djlorenz.github.io/astronomy/lp2025/" target="_blank">David J. Lorenz (SkyAtlas 2025)</a>'
-        });
+        // 5. SkyAtlas 2025 su Rilievi Topografici (OpenTopoMap + SkyAtlas + Riferimenti)
+        const skyAtlas2025Topo = L.layerGroup([
+            openTopoMap,
+            createSkyAtlasTileLayer(0.55),
+            referenceLabels
+        ]);
+
+        // 6. Overlay autonomi attivabili sopra qualsiasi mappa
+        const skyAtlas2025Overlay = createSkyAtlasTileLayer(0.70);
+        const geographicLabelsOverlay = L.layerGroup([referenceRoads, referenceLabels]);
 
         this.map = L.map(this.mapContainerId, {
             center: [this.currentObserver.lat, this.currentObserver.lon],
@@ -84,17 +108,19 @@ export class MapManager {
             layers: [openTopoMap] // Default rilievo topografico
         });
 
-        // Controllo Layer
+        // Controllo Layer Mappe Base e Overlay
         const baseMaps = {
             "OpenTopoMap (Rilievi)": openTopoMap,
             "OpenStreetMap (Standard)": osmStandard,
             "Satellite (Esri)": esriSatellite,
-            "SkyAtlas 2025 (Inquinamento Luminoso)": skyAtlas2025Base,
+            "SkyAtlas 2025 Notte Ibrido (Inquinamento + Strade/Cime)": skyAtlas2025Hybrid,
+            "SkyAtlas 2025 su Topografia (Rilievi + Inquinamento)": skyAtlas2025Topo,
             "Mappa Dark Canvas": esriDark
         };
 
         const overlayMaps = {
-            "🌙 Overlay SkyAtlas 2025": skyAtlas2025Overlay
+            "🌙 Overlay SkyAtlas 2025 (Inquinamento Luminoso)": skyAtlas2025Overlay,
+            "🏷️ Strade, Cime e Confini": geographicLabelsOverlay
         };
 
         L.control.layers(baseMaps, overlayMaps, { position: 'topright' }).addTo(this.map);
