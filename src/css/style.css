@@ -493,6 +493,99 @@ input[type="range"] {
     transition: all 0.4s ease;
 }
 
+/* Quick Action Links Google Maps & Street View */
+.btn-gmaps {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+    color: #93c5fd;
+    text-decoration: none;
+}
+
+.btn-gmaps:hover {
+    background: #1d4ed8;
+    color: #ffffff;
+    border-color: #60a5fa;
+}
+
+.btn-streetview {
+    background: #831843;
+    border-color: #ec4899;
+    color: #fbcfe8;
+    text-decoration: none;
+}
+
+.btn-streetview:hover {
+    background: #be185d;
+    color: #ffffff;
+    border-color: #f472b6;
+}
+
+/* Custom Map Popup & Context Menu */
+.custom-map-popup .leaflet-popup-content-wrapper {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: #f8fafc;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+.custom-map-popup .leaflet-popup-tip {
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid var(--border-color);
+}
+
+.custom-context-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 190px;
+    padding: 4px 0;
+}
+
+.custom-context-menu .menu-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--accent-blue);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+}
+
+.custom-context-menu .menu-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.observer-popup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 180px;
+    padding: 2px 0;
+}
+
+.observer-popup .popup-header {
+    font-size: 0.88rem;
+    color: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.observer-popup .popup-coords {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.observer-popup .popup-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 6px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .app-container {
@@ -503,3 +596,4 @@ input[type="range"] {
         height: 300px;
     }
 }
+

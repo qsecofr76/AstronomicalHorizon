@@ -1,7 +1,9 @@
 /**
  * map.js - Gestione della mappa OpenStreetMap con Leaflet
- * Gestisce i layer di base, il marker dell'osservatore, l'overlay della raggiera
- * e il contorno perimetrale delle vette dell'orizzonte.
+ * Supporta:
+ * - Layer cartografici con SkyAtlas 2025 (Inquinamento Luminoso) al posto di CartoDark
+ * - Accesso rapido a Google Maps e Google Street View tramite click destro e popup
+ * - Raggiera dell'Orizzonte Massimo e contorno perimetrale vette
  */
 
 export class MapManager {
@@ -18,7 +20,7 @@ export class MapManager {
         this.horizonPerimeterLayer = null;
 
         this.currentObserver = {
-            lat: 46.55744, // Default: Lago di Pramollo - Ristorante da Livio (Passo Pramollo)
+            lat: 46.55744, // Default: Lago di Pramollo - Ristorante da Livio
             lon: 13.27853,
             height: 1.8
         };
@@ -33,30 +35,52 @@ export class MapManager {
             return;
         }
 
-        // Layer Cartografici
+        // 1. Layer Cartografici di Base
+        const openTopoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Mappa: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> | Dati: &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+        });
+
         const osmStandard = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         });
 
-        const openTopoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-            maxZoom: 17,
-            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
-        });
-
         const esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 18,
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            attribution: 'Satellite: &copy; Esri, Maxar, Earthstar Geographics'
         });
 
-        const cartoDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            maxZoom: 19,
-            attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>'
+        const esriDark = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 16,
+            attribution: 'Tiles &copy; Esri &mdash; Canvas Dark'
+        });
+
+        // 2. Layer Inquinamento Luminoso SkyAtlas 2025 (David J. Lorenz)
+        const skyAtlas2025Base = L.layerGroup([
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }),
+            L.tileLayer('https://djlorenz.github.io/astronomy/image_tiles/tiles2025/tile_{z}_{x}_{y}.png', {
+                tileSize: 1024,
+                zoomOffset: -2,
+                maxZoom: 14,
+                opacity: 0.85,
+                errorTileUrl: 'https://djlorenz.github.io/astronomy/image_tiles/tiles2025/black.png',
+                attribution: 'Inquinamento Luminoso: &copy; <a href="https://djlorenz.github.io/astronomy/lp2025/" target="_blank">David J. Lorenz (SkyAtlas 2025)</a>'
+            })
+        ]);
+
+        const skyAtlas2025Overlay = L.tileLayer('https://djlorenz.github.io/astronomy/image_tiles/tiles2025/tile_{z}_{x}_{y}.png', {
+            tileSize: 1024,
+            zoomOffset: -2,
+            maxZoom: 14,
+            opacity: 0.70,
+            errorTileUrl: 'https://djlorenz.github.io/astronomy/image_tiles/tiles2025/black.png',
+            attribution: 'Inquinamento Luminoso: &copy; <a href="https://djlorenz.github.io/astronomy/lp2025/" target="_blank">David J. Lorenz (SkyAtlas 2025)</a>'
         });
 
         this.map = L.map(this.mapContainerId, {
             center: [this.currentObserver.lat, this.currentObserver.lon],
-            zoom: 11,
+            zoom: 12,
             layers: [openTopoMap] // Default rilievo topografico
         });
 
@@ -65,9 +89,15 @@ export class MapManager {
             "OpenTopoMap (Rilievi)": openTopoMap,
             "OpenStreetMap (Standard)": osmStandard,
             "Satellite (Esri)": esriSatellite,
-            "Carto Dark": cartoDark
+            "SkyAtlas 2025 (Inquinamento Luminoso)": skyAtlas2025Base,
+            "Mappa Dark Canvas": esriDark
         };
-        L.control.layers(baseMaps, null, { position: 'topright' }).addTo(this.map);
+
+        const overlayMaps = {
+            "🌙 Overlay SkyAtlas 2025": skyAtlas2025Overlay
+        };
+
+        L.control.layers(baseMaps, overlayMaps, { position: 'topright' }).addTo(this.map);
 
         // Scala metrica
         L.control.scale({ imperial: false, metric: true, position: 'bottomleft' }).addTo(this.map);
@@ -87,17 +117,49 @@ export class MapManager {
         this.observerMarker = L.marker([this.currentObserver.lat, this.currentObserver.lon], {
             icon: observerIcon,
             draggable: true,
-            title: 'Punto di osservazione (Trascina per spostare)'
+            title: 'Punto di osservazione (Trascina per spostare o clicca per opzioni)'
         }).addTo(this.map);
+
+        this.updateObserverPopup();
 
         this.observerMarker.on('dragend', (e) => {
             const pos = e.target.getLatLng();
             this.setObserverPosition(pos.lat, pos.lng, true);
         });
 
-        // Eventi click su mappa
+        // Evento Click sinistro per spostare osservatore
         this.map.on('click', (e) => {
             this.setObserverPosition(e.latlng.lat, e.latlng.lng, true);
+        });
+
+        // Evento Click destro (Context Menu) per accesso rapido a Google Maps & Street View
+        this.map.on('contextmenu', (e) => {
+            const lat = e.latlng.lat.toFixed(5);
+            const lon = e.latlng.lng.toFixed(5);
+            const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+            const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}`;
+
+            const popupContent = `
+                <div class="custom-context-menu">
+                    <div class="menu-title"><i class="fas fa-map-marker-alt"></i> Punto Selezionato (${lat}°, ${lon}°)</div>
+                    <div class="menu-actions">
+                        <button class="btn btn-sm btn-primary" onclick="window.app.mapManager.setObserverPosition(${lat}, ${lon}, true); window.app.mapManager.map.closePopup();">
+                            <i class="fas fa-crosshairs"></i> Imposta Osservatore Qui
+                        </button>
+                        <a href="${gmapsUrl}" target="_blank" class="btn btn-sm btn-gmaps">
+                            <i class="fab fa-google"></i> Apri su Google Maps
+                        </a>
+                        <a href="${streetViewUrl}" target="_blank" class="btn btn-sm btn-streetview">
+                            <i class="fas fa-street-view"></i> Apri Google Street View
+                        </a>
+                    </div>
+                </div>
+            `;
+
+            L.popup({ className: 'custom-map-popup' })
+                .setLatLng(e.latlng)
+                .setContent(popupContent)
+                .openOn(this.map);
         });
 
         // Evento mousemove per quota istantanea
@@ -109,6 +171,34 @@ export class MapManager {
     }
 
     /**
+     * Aggiorna il popup interattivo dell'osservatore con link a Google Maps e Street View
+     */
+    updateObserverPopup() {
+        if (!this.observerMarker) return;
+        const lat = this.currentObserver.lat.toFixed(5);
+        const lon = this.currentObserver.lon.toFixed(5);
+        const gmapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+        const streetViewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}`;
+
+        const popupContent = `
+            <div class="observer-popup">
+                <div class="popup-header"><i class="fas fa-eye"></i> <b>Punto di Osservazione</b></div>
+                <div class="popup-coords">Lat: ${lat}°, Lon: ${lon}°</div>
+                <div class="popup-buttons">
+                    <a href="${gmapsUrl}" target="_blank" class="btn btn-sm btn-gmaps">
+                        <i class="fab fa-google"></i> Google Maps
+                    </a>
+                    <a href="${streetViewUrl}" target="_blank" class="btn btn-sm btn-streetview">
+                        <i class="fas fa-street-view"></i> Street View
+                    </a>
+                </div>
+            </div>
+        `;
+
+        this.observerMarker.bindPopup(popupContent, { className: 'custom-map-popup' });
+    }
+
+    /**
      * Sposta la posizione dell'osservatore e invoca il callback di calcolo
      */
     setObserverPosition(lat, lon, triggerCallback = true) {
@@ -117,6 +207,7 @@ export class MapManager {
 
         if (this.observerMarker) {
             this.observerMarker.setLatLng([lat, lon]);
+            this.updateObserverPopup();
         }
 
         if (triggerCallback && this.onLocationSelected) {
@@ -158,7 +249,6 @@ export class MapManager {
 
         const { minLat, maxLat, minLon, maxLon, gridSize } = gridData;
 
-        // Crea un canvas temporaneo in memoria per generare l'immagine
         const offCanvas = document.createElement('canvas');
         offCanvas.width = gridSize;
         offCanvas.height = gridSize;
@@ -181,23 +271,22 @@ export class MapManager {
             }).addTo(this.map);
         }
 
-        // Traccia il perimetro della cresta dell'orizzonte
+        // Traccia il perimetro della cresta dell'orizzonte (solo per veri ostacoli > 2°)
         if (horizonProfile && this.horizonPerimeterLayer) {
             this.horizonPerimeterLayer.clearLayers();
             const points = [];
             horizonProfile.forEach(p => {
-                if (p.lat && p.lon && p.hasObstacle) {
+                if (p.lat && p.lon && p.hasObstacle && p.maxAngle > 2.0) {
                     points.push([p.lat, p.lon]);
                 }
             });
 
             if (points.length > 2) {
-                points.push(points[0]); // Chiudi il perimetro
                 L.polyline(points, {
                     color: '#38bdf8',
-                    weight: 1.5,
-                    dashArray: '3, 3',
-                    opacity: 0.75,
+                    weight: 1.6,
+                    dashArray: '4, 4',
+                    opacity: 0.8,
                     interactive: false
                 }).addTo(this.horizonPerimeterLayer);
             }
@@ -230,12 +319,11 @@ export class MapManager {
         if (!this.map || !L || !this.sightlineLayer) return;
 
         this.sightlineLayer.clearLayers();
-        if (!info || !info.hasObstacle || !info.lat || !info.lon) return;
+        if (!info || !info.lat || !info.lon) return;
 
         const obsLatLng = [this.currentObserver.lat, this.currentObserver.lon];
         const peakLatLng = [info.lat, info.lon];
 
-        // Colore coordinato in base all'angolo (Rosso > 20°, Verde < 15°)
         let targetColor = '#10b981'; // Verde (< 15°)
         let statusBadge = '<span style="color:#10b981;">● Rilievo Basso (&lt; 15°)</span>';
         if (info.maxAngle >= 20.0) {
@@ -246,23 +334,24 @@ export class MapManager {
             statusBadge = '<span style="color:#f59e0b;">● Rilievo Medio (15°-20°)</span>';
         }
 
-        // Linea di vista verso il punto di blocco
+        // Linea di vista verso il punto di blocco o orizzonte aperto
         L.polyline([obsLatLng, peakLatLng], {
             color: targetColor,
             weight: 3,
             dashArray: '5, 4'
         }).addTo(this.sightlineLayer);
 
-        // Marker sulla vetta
+        // Marker sulla vetta / orizzonte
         const peakIcon = L.divIcon({
             className: 'peak-target-icon',
-            html: `<div class="peak-dot" style="background:${targetColor}; box-shadow:0 0 12px ${targetColor};"><i class="fas fa-mountain"></i></div>`,
+            html: `<div class="peak-dot" style="background:${targetColor}; box-shadow:0 0 12px ${targetColor};"><i class="fas ${info.hasObstacle ? 'fa-mountain' : 'fa-sun'}"></i></div>`,
             iconSize: [26, 26],
             iconAnchor: [13, 13]
         });
 
+        const titleText = info.hasObstacle ? 'Rilievo Orizzonte' : 'Orizzonte Aperto';
         L.marker(peakLatLng, { icon: peakIcon })
-            .bindTooltip(`<b>Rilievo Orizzonte (Azimut ${azimuth}°)</b><br>${statusBadge}<br>Inclinazione: <b>+${info.maxAngle.toFixed(2)}°</b><br>Quota Vetta: ${info.elevationM} m<br>Distanza: ${info.distanceKm} km`, {
+            .bindTooltip(`<b>${titleText} (Azimut ${azimuth}°)</b><br>${statusBadge}<br>Inclinazione: <b>+${info.maxAngle.toFixed(2)}°</b><br>Quota: ${info.elevationM} m<br>Distanza: ${info.distanceKm} km`, {
                 permanent: false,
                 direction: 'top'
             })

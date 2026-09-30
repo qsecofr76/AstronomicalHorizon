@@ -329,6 +329,15 @@ class AstronomicalHorizonApp {
         if (latSpan) latSpan.textContent = `${lat.toFixed(5)}°`;
         if (lonSpan) lonSpan.textContent = `${lon.toFixed(5)}°`;
         if (elevSpan) elevSpan.textContent = `${Math.round(elev)} m`;
+
+        const gmapsLink = document.getElementById('gmapsLink');
+        const streetViewLink = document.getElementById('streetViewLink');
+        if (gmapsLink) {
+            gmapsLink.href = `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lon.toFixed(6)}`;
+        }
+        if (streetViewLink) {
+            streetViewLink.href = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}`;
+        }
     }
 
     updateStatsUI(stats) {
