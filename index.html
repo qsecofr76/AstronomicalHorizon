@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Astronomical Horizon & Viewshed Analyzer</title>
     
     <!-- Leaflet CSS & JS -->
@@ -23,17 +23,31 @@
     <header class="app-header">
         <div class="brand">
             <i class="fas fa-mountain-sun"></i>
-            <span>Astronomical Horizon & Viewshed Analyzer</span>
+            <span class="brand-text">Astronomical Horizon</span>
         </div>
         <div class="header-status">
-            <span id="hoverCoords">Passa il cursore sulla mappa per le coordinate</span>
-            <span class="badge">DEM AWS Terrarium</span>
+            <span id="hoverCoords" class="desktop-only">Passa il cursore sulla mappa per le coordinate</span>
+            <span class="badge">DEM Terrarium</span>
+            <button class="mobile-toggle-btn" id="mobileDrawerBtn" title="Apri Parametri">
+                <i class="fas fa-sliders-h"></i>
+            </button>
         </div>
     </header>
 
+    <!-- Backdrop per menu mobile -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
     <div class="app-container">
-        <!-- Barra Laterale Controlli -->
-        <aside class="sidebar">
+        <!-- Barra Laterale Controlli (Desktop Sidebar / Mobile Drawer) -->
+        <aside class="sidebar" id="sidebarDrawer">
+            <!-- Header Drawer Mobile -->
+            <div class="drawer-header mobile-only">
+                <div class="drawer-title"><i class="fas fa-sliders-h"></i> Controlli & Parametri</div>
+                <button class="btn btn-sm btn-icon drawer-close-btn" id="closeDrawerBtn" title="Chiudi">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
             <!-- Sezione Ricerca e Preset -->
             <div class="sidebar-section">
                 <div class="section-title">
@@ -41,7 +55,7 @@
                     <span>Cerca o Seleziona Luogo</span>
                 </div>
                 <div class="search-box">
-                    <input type="text" id="locationSearch" placeholder="Cerca es. Courmayeur, Etna, Roma...">
+                    <input type="text" id="locationSearch" placeholder="Cerca es. Passo Pramollo, Etna...">
                     <button class="btn btn-primary" id="searchBtn" title="Cerca con Nominatim">
                         <i class="fas fa-search"></i>
                     </button>
@@ -86,7 +100,7 @@
                         </div>
                     </div>
                     <!-- Link Rapidi Google Maps e Street View -->
-                    <div class="quick-links" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px;">
+                    <div class="quick-links">
                         <a id="gmapsLink" href="https://www.google.com/maps/search/?api=1&query=46.55744,13.27853" target="_blank" class="btn btn-sm btn-gmaps" title="Apri coordinate su Google Maps">
                             <i class="fab fa-google"></i> Maps
                         </a>
@@ -122,7 +136,7 @@
 
                 <div class="control-group">
                     <div class="control-header">
-                        <span>Magnificazione Profilo Altimetrico</span>
+                        <span>Magnificazione Profilo</span>
                         <span class="control-val" id="magnificationVal">2.0x</span>
                     </div>
                     <input type="range" id="magnificationSlider" min="1.0" max="5.0" step="0.5" value="2.0">
@@ -141,9 +155,9 @@
                     </select>
 
                     <div class="legend-pills">
-                        <span class="pill-red">🔴 &ge; 20° Rilievo Alto</span>
-                        <span class="pill-amber">🟠 15°-20° Rilievo Medio</span>
-                        <span class="pill-green">🟢 &lt; 15° Rilievo Basso</span>
+                        <span class="pill-red">🔴 &ge; 20° Alto</span>
+                        <span class="pill-amber">🟠 15°-20° Medio</span>
+                        <span class="pill-green">🟢 &lt; 15° Basso</span>
                     </div>
                 </div>
 
@@ -203,7 +217,7 @@
             </div>
 
             <!-- Esportazione Dati -->
-            <div class="sidebar-section" style="border-bottom: none;">
+            <div class="sidebar-section" style="border-bottom: none; margin-bottom: 20px;">
                 <div class="section-title">
                     <i class="fas fa-file-export"></i>
                     <span>Esportazione Dati</span>
@@ -219,24 +233,34 @@
             </div>
         </aside>
 
-        <!-- Area Mappa e Grafico -->
+        <!-- Area Principale (Mappa e Grafico) -->
         <main class="main-view">
+            <!-- Badge Flottante Mobile su Mappa -->
+            <div class="mobile-floating-badge mobile-only" id="mobileFloatingBadge">
+                <span id="mobObsElev">🏔️ Quota: -- m</span>
+                <span class="badge-separator">|</span>
+                <span id="mobObsAngle">Orizzonte Max: --°</span>
+            </div>
+
             <!-- Mappa Leaflet -->
             <div id="map"></div>
 
-            <!-- Pannello Orizzonte Astronomico Inferiore -->
+            <!-- Pannello Orizzonte Astronomico Inferiore / Mobile Bottom Sheet -->
             <div class="chart-panel" id="horizonPanel">
                 <div class="chart-header" id="toggleChartHeader">
                     <div class="chart-title">
                         <i class="fas fa-mountain"></i>
-                        <span>Profilo Orizzonte Topografico & Astronomico a 360° (Nord &rarr; Est &rarr; Sud &rarr; Ovest)</span>
+                        <span>Profilo Orizzonte 360°</span>
                     </div>
                     <div class="chart-actions">
                         <button class="btn btn-sm" id="expandChartBtn" title="Ingrandisci o riduci l'altezza del grafico">
-                            <i class="fas fa-expand-alt"></i> Espandi Grafico
+                            <i class="fas fa-expand-alt"></i> <span class="desktop-only">Espandi</span>
                         </button>
                         <button class="btn btn-sm" id="exportChartBtn" title="Scarica immagine del grafico">
-                            <i class="fas fa-camera"></i> Salva PNG
+                            <i class="fas fa-camera"></i> <span class="desktop-only">Salva PNG</span>
+                        </button>
+                        <button class="btn btn-sm mobile-only" id="closeMobileChartBtn" title="Chiudi pannello">
+                            <i class="fas fa-times"></i>
                         </button>
                     </div>
                 </div>
@@ -246,6 +270,22 @@
             </div>
         </main>
     </div>
+
+    <!-- Barra di Navigazione Mobile Inferiore (Fissa per Smartphone) -->
+    <nav class="mobile-bottom-nav mobile-only">
+        <button class="nav-tab active" data-tab="map" id="tabMap">
+            <i class="fas fa-map-marked-alt"></i>
+            <span>Mappa</span>
+        </button>
+        <button class="nav-tab" data-tab="horizon" id="tabHorizon">
+            <i class="fas fa-mountain"></i>
+            <span>Orizzonte</span>
+        </button>
+        <button class="nav-tab" data-tab="controls" id="tabControls">
+            <i class="fas fa-sliders-h"></i>
+            <span>Parametri</span>
+        </button>
+    </nav>
 
     <!-- Overlay Caricamento -->
     <div class="loader-overlay hidden" id="loaderOverlay">

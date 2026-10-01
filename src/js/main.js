@@ -1,5 +1,6 @@
 /**
  * main.js - Modulo principale e controller applicazione Astronomical Horizon
+ * Con supporto completo per navigazione mobile portrait (drawer, bottom tabs, badge flottante).
  */
 
 import { DEMProvider } from './dem.js';
@@ -23,7 +24,7 @@ class AstronomicalHorizonApp {
             radiusKm: 15,
             observerHeight: 1.8,
             targetHeight: 0.0,
-            colorMode: 'raggiera_horizon', // Nuova modalità predefinita richiesta dall'utente
+            colorMode: 'raggiera_horizon',
             verticalMagnification: 2.0,
             refractionCoeff: 0.13,
             overlayOpacity: 0.70,
@@ -36,6 +37,7 @@ class AstronomicalHorizonApp {
     async init() {
         this.initWorker();
         this.initUI();
+        this.initMobileNav();
         this.initMapAndChart();
         
         // Calcolo iniziale con posizione predefinita (Lago di Pramollo - Ristorante da Livio)
@@ -150,8 +152,8 @@ class AstronomicalHorizonApp {
                 horizonPanel.classList.toggle('expanded');
                 const isExpanded = horizonPanel.classList.contains('expanded');
                 expandChartBtn.innerHTML = isExpanded
-                    ? '<i class="fas fa-compress-alt"></i> Riduci Grafico'
-                    : '<i class="fas fa-expand-alt"></i> Espandi Grafico';
+                    ? '<i class="fas fa-compress-alt"></i> <span class="desktop-only">Riduci</span>'
+                    : '<i class="fas fa-expand-alt"></i> <span class="desktop-only">Espandi</span>';
                 setTimeout(() => {
                     if (this.chartManager && this.chartManager.chart) {
                         this.chartManager.chart.resize();
@@ -167,8 +169,9 @@ class AstronomicalHorizonApp {
             const [lat, lon] = e.target.value.split(',');
             const pLat = parseFloat(lat);
             const pLon = parseFloat(lon);
-            this.mapManager.panTo(pLat, pLon, 11);
+            this.mapManager.panTo(pLat, pLon, 12);
             this.mapManager.setObserverPosition(pLat, pLon, true);
+            this.closeMobileDrawer();
         });
 
         // Ricerca Nominatim
@@ -189,6 +192,7 @@ class AstronomicalHorizonApp {
                     this.mapManager.panTo(lat, lon, 12);
                     this.mapManager.setObserverPosition(lat, lon, true);
                     this.showToast(`Trovato: ${first.display_name.split(',')[0]}`, 'success');
+                    this.closeMobileDrawer();
                 } else {
                     this.showToast('Nessun risultato trovato.', 'warning');
                 }
@@ -223,7 +227,110 @@ class AstronomicalHorizonApp {
         // Ricalcolo esplicito
         document.getElementById('recalculateBtn').addEventListener('click', () => {
             this.recalculate(true);
+            this.closeMobileDrawer();
         });
+    }
+
+    /**
+     * Gestione Interfaccia e Navigazione Mobile (Portrait)
+     */
+    initMobileNav() {
+        const mobileDrawerBtn = document.getElementById('mobileDrawerBtn');
+        const closeDrawerBtn = document.getElementById('closeDrawerBtn');
+        const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+        const closeMobileChartBtn = document.getElementById('closeMobileChartBtn');
+
+        const tabMap = document.getElementById('tabMap');
+        const tabHorizon = document.getElementById('tabHorizon');
+        const tabControls = document.getElementById('tabControls');
+        const horizonPanel = document.getElementById('horizonPanel');
+
+        // Toggle Drawer Parametri
+        if (mobileDrawerBtn) {
+            mobileDrawerBtn.addEventListener('click', () => this.toggleMobileDrawer());
+        }
+        if (closeDrawerBtn) {
+            closeDrawerBtn.addEventListener('click', () => this.closeMobileDrawer());
+        }
+        if (sidebarBackdrop) {
+            sidebarBackdrop.addEventListener('click', () => this.closeMobileDrawer());
+        }
+
+        // Chiudi Bottom Sheet Grafico su Mobile
+        if (closeMobileChartBtn && horizonPanel) {
+            closeMobileChartBtn.addEventListener('click', () => {
+                horizonPanel.classList.remove('mobile-active');
+                if (tabMap && tabHorizon) {
+                    tabHorizon.classList.remove('active');
+                    tabMap.classList.add('active');
+                }
+            });
+        }
+
+        // Bottom Navigation Tabs
+        if (tabMap) {
+            tabMap.addEventListener('click', () => {
+                this.setActiveNavTab(tabMap);
+                this.closeMobileDrawer();
+                if (horizonPanel) horizonPanel.classList.remove('mobile-active');
+            });
+        }
+
+        if (tabHorizon) {
+            tabHorizon.addEventListener('click', () => {
+                this.setActiveNavTab(tabHorizon);
+                this.closeMobileDrawer();
+                if (horizonPanel) {
+                    horizonPanel.classList.add('mobile-active');
+                    setTimeout(() => {
+                        if (this.chartManager && this.chartManager.chart) {
+                            this.chartManager.chart.resize();
+                        }
+                    }, 250);
+                }
+            });
+        }
+
+        if (tabControls) {
+            tabControls.addEventListener('click', () => {
+                this.setActiveNavTab(tabControls);
+                this.openMobileDrawer();
+            });
+        }
+    }
+
+    setActiveNavTab(activeTab) {
+        document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+        if (activeTab) activeTab.classList.add('active');
+    }
+
+    openMobileDrawer() {
+        const sidebar = document.getElementById('sidebarDrawer');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (sidebar) sidebar.classList.add('open');
+        if (backdrop) backdrop.classList.add('active');
+    }
+
+    closeMobileDrawer() {
+        const sidebar = document.getElementById('sidebarDrawer');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        const tabControls = document.getElementById('tabControls');
+        const tabMap = document.getElementById('tabMap');
+
+        if (sidebar) sidebar.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('active');
+        if (tabControls && tabControls.classList.contains('active')) {
+            this.setActiveNavTab(tabMap);
+        }
+    }
+
+    toggleMobileDrawer() {
+        const sidebar = document.getElementById('sidebarDrawer');
+        if (sidebar && sidebar.classList.contains('open')) {
+            this.closeMobileDrawer();
+        } else {
+            this.openMobileDrawer();
+        }
     }
 
     async onLocationChanged(lat, lon) {
@@ -314,7 +421,7 @@ class AstronomicalHorizonApp {
         const obs = this.mapManager.currentObserver;
         this.chartManager.updateChart(horizonProfile, obs.lat, obs.lon);
 
-        // 3. Aggiorna statistiche UI
+        // 3. Aggiorna statistiche UI e badge mobile
         this.updateStatsUI(stats);
 
         this.setLoading(false);
@@ -325,10 +432,12 @@ class AstronomicalHorizonApp {
         const latSpan = document.getElementById('obsLat');
         const lonSpan = document.getElementById('obsLon');
         const elevSpan = document.getElementById('obsElev');
+        const mobObsElev = document.getElementById('mobObsElev');
 
         if (latSpan) latSpan.textContent = `${lat.toFixed(5)}°`;
         if (lonSpan) lonSpan.textContent = `${lon.toFixed(5)}°`;
         if (elevSpan) elevSpan.textContent = `${Math.round(elev)} m`;
+        if (mobObsElev) mobObsElev.textContent = `🏔️ Quota: ${Math.round(elev)} m`;
 
         const gmapsLink = document.getElementById('gmapsLink');
         const streetViewLink = document.getElementById('streetViewLink');
@@ -347,6 +456,11 @@ class AstronomicalHorizonApp {
         document.getElementById('statMinElev').textContent = `${stats.minTerrainElev} m`;
         document.getElementById('statMaxElev').textContent = `${stats.maxTerrainElev} m`;
         document.getElementById('statMaxAngle').textContent = `${stats.maxAngleSeen > 0 ? '+' : ''}${stats.maxAngleSeen}°`;
+
+        const mobObsAngle = document.getElementById('mobObsAngle');
+        if (mobObsAngle) {
+            mobObsAngle.textContent = `Orizzonte Max: ${stats.maxAngleSeen > 0 ? '+' : ''}${stats.maxAngleSeen}°`;
+        }
     }
 
     setLoading(active, message = 'Elaborazione in corso...') {
