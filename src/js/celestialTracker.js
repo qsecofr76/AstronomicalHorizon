@@ -3,8 +3,9 @@
  * Gestisce:
  * - Filtro per categorie (Pianeti, Nebulose con Helix Nebula, Galassie, Ammassi, Stelle)
  * - Ricerca istantanea nel catalogo
- * - Selezione multipla di oggetti da tracciare nel grafico dell'orizzonte
+ * - Selezione multipla di oggetti da tracciare nel grafico dell'orizzonte 360°
  * - Calcolo e visualizzazione delle schede di effemeridi (sorge/tramonta dietro i rilievi, culminazione, ore visibili)
+ * - Layout a schede espandibili (accordion) senza sovrapposizioni
  */
 
 import { CELESTIAL_CATALOG, CELESTIAL_CATEGORIES } from './deepSkyCatalog.js';
@@ -17,10 +18,10 @@ export class CelestialTracker {
         this.onStateChange = onStateChange;
 
         this.selectedObjects = new Map(); // id -> object
+        this.expandedObjects = new Set(['NGC7293']); // Helix Nebula espansa di default per mostrare subito le effemeridi
         this.activeCategory = 'all';
         this.searchQuery = '';
         this.selectedDate = new Date();
-        this.activeDetailObject = null;
 
         // Seleziona di default NGC 7293 Helix Nebula e Giove come suggerimenti iniziali
         const helix = CELESTIAL_CATALOG.find(o => o.id === 'NGC7293');
@@ -34,7 +35,6 @@ export class CelestialTracker {
     initDOM() {
         this.panel = document.getElementById('celestialPanel');
         this.objectListContainer = document.getElementById('celestialList');
-        this.detailContainer = document.getElementById('celestialDetailCard');
         this.categoryTabsContainer = document.getElementById('celestialCategoryTabs');
         this.searchInput = document.getElementById('celestialSearchInput');
         this.dateInput = document.getElementById('celestialDatePicker');
@@ -48,7 +48,7 @@ export class CelestialTracker {
     }
 
     bindEvents() {
-        // Ricerca
+        // Ricerca istantanea
         if (this.searchInput) {
             this.searchInput.addEventListener('input', (e) => {
                 this.searchQuery = e.target.value.toLowerCase().trim();
@@ -56,7 +56,7 @@ export class CelestialTracker {
             });
         }
 
-        // Data
+        // Data osservazione
         if (this.dateInput) {
             const todayStr = new Date().toISOString().split('T')[0];
             this.dateInput.value = todayStr;
@@ -66,20 +66,19 @@ export class CelestialTracker {
                     this.selectedDate = new Date(y, m - 1, d, 22, 0, 0); // default alle 22:00
                     this.updateChartTrackers();
                     this.renderObjectList();
-                    if (this.activeDetailObject) {
-                        this.showObjectDetails(this.activeDetailObject);
-                    }
                 }
             });
         }
 
-        // Bottoni Rapidi
+        // Pulsanti Rapidi
         if (this.quickTrackHelixBtn) {
             this.quickTrackHelixBtn.addEventListener('click', () => {
                 const helix = CELESTIAL_CATALOG.find(o => o.id === 'NGC7293');
                 if (helix) {
-                    this.toggleObjectSelection(helix, true);
-                    this.showObjectDetails(helix);
+                    this.selectedObjects.set(helix.id, helix);
+                    this.expandedObjects.add(helix.id);
+                    this.updateChartTrackers();
+                    this.renderObjectList();
                 }
             });
         }
@@ -118,10 +117,6 @@ export class CelestialTracker {
         if (this.panel) {
             this.panel.classList.add('open');
             this.renderObjectList();
-            if (!this.activeDetailObject) {
-                const helix = CELESTIAL_CATALOG.find(o => o.id === 'NGC7293');
-                if (helix) this.showObjectDetails(helix);
-            }
         }
     }
 
@@ -145,6 +140,7 @@ export class CelestialTracker {
 
         Object.entries(CELESTIAL_CATEGORIES).forEach(([key, label]) => {
             const btn = document.createElement('button');
+            btn.type = 'button';
             btn.className = `cat-tab ${this.activeCategory === key ? 'active' : ''}`;
             btn.textContent = label;
             btn.addEventListener('click', () => {
@@ -191,41 +187,111 @@ export class CelestialTracker {
 
         filtered.forEach(obj => {
             const isSelected = this.selectedObjects.has(obj.id);
+            const isExpanded = this.expandedObjects.has(obj.id);
             const eph = AstronomyService.calculateObjectEphemerides(obj, this.selectedDate, obs.lat, obs.lon, horizon);
 
+            const raStr = `${Math.floor(eph.current.raHours)}h ${Math.floor((eph.current.raHours % 1) * 60)}m`;
+            const decSign = eph.current.decDeg >= 0 ? '+' : '';
+            const decStr = `${decSign}${eph.current.decDeg.toFixed(2)}°`;
+
             const card = document.createElement('div');
-            card.className = `celestial-card ${isSelected ? 'selected' : ''} ${obj.featured ? 'featured' : ''}`;
+            card.className = `celestial-card ${isSelected ? 'selected' : ''} ${obj.featured ? 'featured' : ''} ${isExpanded ? 'expanded' : ''}`;
             
-            card.innerHTML = `
+            // Header Scheda
+            let cardHtml = `
                 <div class="celestial-card-header">
                     <div class="celestial-title-wrap">
                         <span class="celestial-color-dot" style="background-color: ${obj.color || '#38bdf8'}"></span>
                         <div class="celestial-name">${obj.name}</div>
                     </div>
-                    <label class="toggle-switch" title="Mostra traiettoria nel grafico">
-                        <input type="checkbox" ${isSelected ? 'checked' : ''} data-id="${obj.id}">
-                        <span class="switch-slider"></span>
-                    </label>
+                    <div class="celestial-card-actions">
+                        <label class="toggle-switch" title="Mostra/Nascondi traiettoria nel grafico dell'orizzonte">
+                            <input type="checkbox" ${isSelected ? 'checked' : ''} data-id="${obj.id}">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
                 </div>
-                <div class="celestial-meta">
-                    <span class="meta-tag"><i class="fas fa-compass"></i> ${obj.constellation}</span>
-                    <span class="meta-tag"><i class="fas fa-star"></i> Mag ${obj.mag}</span>
+
+                <!-- Barra di stato e sintesi rapida -->
+                <div class="celestial-summary-row">
                     <span class="status-pill ${eph.current.statusClass}">
                         ${eph.current.isAboveMountains ? '🟢' : (eph.current.altitude > 0 ? '🟠' : '⚫')} ${eph.current.statusText} (${eph.current.altitude > 0 ? '+' : ''}${eph.current.altitude}°)
                     </span>
-                </div>
-                <div class="celestial-eph-summary">
-                    <span><i class="fas fa-mountain"></i> Visibile stanotte: <strong>${eph.visibility.nightVisibleStr}</strong></span>
-                    <span><i class="fas fa-arrow-up"></i> Culmina: <strong>${eph.culmination.time} (${eph.culmination.altitude}°)</strong></span>
+                    <span class="meta-tag"><i class="fas fa-compass"></i> ${obj.constellation}</span>
+                    <span class="meta-tag"><i class="fas fa-star"></i> Mag ${obj.mag}</span>
+                    <button type="button" class="btn-expand-details" title="${isExpanded ? 'Riduci dettagli' : 'Espandi effemeridi complete'}">
+                        <span>${isExpanded ? 'Chiudi Dettagli ▲' : 'Effemeridi & Dettagli ▼'}</span>
+                    </button>
                 </div>
             `;
 
-            // Click sulla scheda: mostra dettagli approfonditi
+            // Dettagli Espansi (Accordion)
+            if (isExpanded) {
+                cardHtml += `
+                    <div class="celestial-expanded-section">
+                        ${obj.description ? `<div class="celestial-desc">${obj.description}</div>` : ''}
+
+                        <div class="detail-grid">
+                            <div class="detail-stat-box">
+                                <span class="detail-label">🌄 Sorge sopra i rilievi</span>
+                                <span class="detail-val highlight">${eph.rise.realTime}</span>
+                                <span class="detail-subval">Az: ${eph.rise.realAz} (Teorico 0°: ${eph.rise.mathTime})</span>
+                            </div>
+
+                            <div class="detail-stat-box">
+                                <span class="detail-label">🌟 Culminazione (Sud)</span>
+                                <span class="detail-val highlight">${eph.culmination.time}</span>
+                                <span class="detail-subval">Alt Max: ${eph.culmination.altitude}° (Az: ${eph.culmination.azimuth}°)</span>
+                            </div>
+
+                            <div class="detail-stat-box">
+                                <span class="detail-label">🌇 Tramonta dietro i monti</span>
+                                <span class="detail-val highlight">${eph.set.realTime}</span>
+                                <span class="detail-subval">Az: ${eph.set.realAz} (Teorico 0°: ${eph.set.mathTime})</span>
+                            </div>
+
+                            <div class="detail-stat-box">
+                                <span class="detail-label">⏱️ Finestra Buio Utile</span>
+                                <span class="detail-val highlight-green">${eph.visibility.nightVisibleStr}</span>
+                                <span class="detail-subval">Tempo totale sopra le vette di notte</span>
+                            </div>
+                        </div>
+
+                        <div class="detail-coords-bar">
+                            <span><strong>Coordinate:</strong> AR ${raStr} | Dec ${decStr}</span>
+                            <span><strong>Orizzonte Monti:</strong> ${eph.current.horizonAngle}°</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            card.innerHTML = cardHtml;
+
+            // Toggle espansione accordion
+            const expandBtn = card.querySelector('.btn-expand-details');
+            if (expandBtn) {
+                expandBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (this.expandedObjects.has(obj.id)) {
+                        this.expandedObjects.delete(obj.id);
+                    } else {
+                        this.expandedObjects.add(obj.id);
+                    }
+                    this.renderObjectList();
+                });
+            }
+
+            // Click su tutta la card per espandere/chiudere
             card.addEventListener('click', (e) => {
-                if (e.target.tagName === 'INPUT' || e.target.classList.contains('switch-slider')) {
+                if (e.target.tagName === 'INPUT' || e.target.classList.contains('switch-slider') || e.target.closest('.toggle-switch')) {
                     return; // gestito dal checkbox
                 }
-                this.showObjectDetails(obj);
+                if (this.expandedObjects.has(obj.id)) {
+                    this.expandedObjects.delete(obj.id);
+                } else {
+                    this.expandedObjects.add(obj.id);
+                }
+                this.renderObjectList();
             });
 
             // Toggle switch nel checkbox
@@ -234,7 +300,6 @@ export class CelestialTracker {
                 checkbox.addEventListener('change', (e) => {
                     e.stopPropagation();
                     this.toggleObjectSelection(obj, e.target.checked);
-                    card.classList.toggle('selected', e.target.checked);
                 });
             }
 
@@ -266,86 +331,10 @@ export class CelestialTracker {
         }
     }
 
-    showObjectDetails(obj) {
-        this.activeDetailObject = obj;
-        if (!this.detailContainer) return;
-
-        const obs = this.mapManager ? this.mapManager.currentObserver : { lat: 46.55744, lon: 13.27853 };
-        const horizon = this.chartManager ? this.chartManager.currentHorizonData : null;
-        const eph = AstronomyService.calculateObjectEphemerides(obj, this.selectedDate, obs.lat, obs.lon, horizon);
-        const isSelected = this.selectedObjects.has(obj.id);
-
-        const raStr = `${Math.floor(eph.current.raHours)}h ${Math.floor((eph.current.raHours % 1) * 60)}m`;
-        const decSign = eph.current.decDeg >= 0 ? '+' : '';
-        const decStr = `${decSign}${eph.current.decDeg.toFixed(2)}°`;
-
-        this.detailContainer.innerHTML = `
-            <div class="detail-card-inner">
-                <div class="detail-header">
-                    <div>
-                        <h3 class="detail-title">${obj.name}</h3>
-                        <div class="detail-sub">${obj.description || ''}</div>
-                    </div>
-                    <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'}" id="detailToggleTrackBtn">
-                        <i class="fas ${isSelected ? 'fa-check' : 'fa-plus'}"></i> ${isSelected ? 'Tracciato' : 'Traccia nel Grafico'}
-                    </button>
-                </div>
-
-                <div class="detail-status-banner ${eph.current.statusClass}">
-                    <i class="fas ${eph.current.isAboveMountains ? 'fa-eye' : 'fa-eye-slash'}"></i>
-                    <span>${eph.current.statusText} — Elevazione: <strong>${eph.current.altitude > 0 ? '+' : ''}${eph.current.altitude}°</strong> (Orizzonte Rilievi: ${eph.current.horizonAngle}°)</span>
-                </div>
-
-                <div class="detail-grid">
-                    <div class="detail-stat-box">
-                        <span class="detail-label">🌄 Sorge sopra i rilievi</span>
-                        <span class="detail-val highlight">${eph.rise.realTime}</span>
-                        <span class="detail-subval">Azimut: ${eph.rise.realAz} (Teorico 0°: ${eph.rise.mathTime})</span>
-                    </div>
-
-                    <div class="detail-stat-box">
-                        <span class="detail-label">🌟 Culminazione (Sud)</span>
-                        <span class="detail-val highlight">${eph.culmination.time}</span>
-                        <span class="detail-subval">Altezza Max: ${eph.culmination.altitude}° (Az: ${eph.culmination.azimuth}°)</span>
-                    </div>
-
-                    <div class="detail-stat-box">
-                        <span class="detail-label">🌇 Tramonta dietro i monti</span>
-                        <span class="detail-val highlight">${eph.set.realTime}</span>
-                        <span class="detail-subval">Azimut: ${eph.set.realAz} (Teorico 0°: ${eph.set.mathTime})</span>
-                    </div>
-
-                    <div class="detail-stat-box">
-                        <span class="detail-label">⏱️ Finestra Buio Utile</span>
-                        <span class="detail-val highlight-green">${eph.visibility.nightVisibleStr}</span>
-                        <span class="detail-subval">Tempo totale sopra le vette di notte</span>
-                    </div>
-                </div>
-
-                <div class="detail-coords-bar">
-                    <span><strong>Costellazione:</strong> ${obj.constellation}</span>
-                    <span><strong>Magnitudine:</strong> ${obj.mag}</span>
-                    <span><strong>AR / Dec:</strong> ${raStr} / ${decStr}</span>
-                </div>
-            </div>
-        `;
-
-        const detailToggleBtn = document.getElementById('detailToggleTrackBtn');
-        if (detailToggleBtn) {
-            detailToggleBtn.addEventListener('click', () => {
-                this.toggleObjectSelection(obj);
-                this.showObjectDetails(obj);
-            });
-        }
-    }
-
     onHorizonUpdated() {
         this.updateChartTrackers();
         if (this.panel && this.panel.classList.contains('open')) {
             this.renderObjectList();
-            if (this.activeDetailObject) {
-                this.showObjectDetails(this.activeDetailObject);
-            }
         }
     }
 }
