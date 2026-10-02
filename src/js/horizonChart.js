@@ -152,7 +152,7 @@ export class HorizonChartManager {
         // ==========================================
         if (this.trackedCelestialObjects && this.trackedCelestialObjects.length > 0) {
             this.trackedCelestialObjects.forEach((celestialObj, objIndex) => {
-                const celestialPathPoints = AstronomyService.generateCelestialPath(celestialObj, this.currentDate, lat, lon, 8);
+                const celestialPathPoints = AstronomyService.generateCelestialPath(celestialObj, this.currentDate, lat, lon, 12);
                 const celestialData = new Array(numPoints).fill(null);
                 const timeMap = new Array(numPoints).fill('');
 
