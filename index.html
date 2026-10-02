@@ -26,15 +26,18 @@
             <span class="brand-text">Astronomical Horizon</span>
         </div>
         <div class="header-status">
+            <button class="btn btn-sm btn-celestial" id="openCelestialBtn" title="Apri Paletta Effemeridi & Cielo Profondo">
+                <i class="fas fa-satellite-dish"></i> <span>Effemeridi & Cielo Profondo</span>
+            </button>
             <span id="hoverCoords" class="desktop-only">Passa il cursore sulla mappa per le coordinate</span>
-            <span class="badge">DEM Terrarium</span>
+            <span class="badge desktop-only">DEM Terrarium</span>
             <button class="mobile-toggle-btn" id="mobileDrawerBtn" title="Apri Parametri">
                 <i class="fas fa-sliders-h"></i>
             </button>
         </div>
     </header>
 
-    <!-- Backdrop per menu mobile -->
+    <!-- Backdrop per menu mobile e drawer effemeridi -->
     <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
     <div class="app-container">
@@ -269,6 +272,58 @@
                 </div>
             </div>
         </main>
+
+        <!-- ========================================== -->
+        <!-- --- PALETTA TRACCIAMENTO CORPI CELESTI --- -->
+        <!-- ========================================== -->
+        <div class="celestial-panel" id="celestialPanel">
+            <div class="celestial-panel-header">
+                <div class="celestial-panel-title">
+                    <i class="fas fa-satellite-dish"></i>
+                    <span>Tracciamento Corpi Celesti & Effemeridi</span>
+                </div>
+                <div class="celestial-panel-controls">
+                    <div class="date-picker-wrap">
+                        <i class="fas fa-calendar-alt"></i>
+                        <input type="date" id="celestialDatePicker" title="Seleziona data di osservazione">
+                    </div>
+                    <button class="btn btn-sm btn-icon" id="closeCelestialBtn" title="Chiudi pannello effemeridi">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="celestial-panel-body">
+                <!-- Sezione Scheda Dettaglio Ephemeris attiva -->
+                <div id="celestialDetailCard" class="celestial-detail-container"></div>
+
+                <!-- Azioni Rapide e Filtri -->
+                <div class="celestial-controls-bar">
+                    <div class="quick-pills">
+                        <button class="pill-btn highlight-pink" id="quickHelixBtn">
+                            <i class="fas fa-eye"></i> Traccia Helix Nebula
+                        </button>
+                        <button class="pill-btn highlight-amber" id="quickPlanetsBtn">
+                            <i class="fas fa-globe"></i> Traccia Tutti i Pianeti
+                        </button>
+                        <button class="pill-btn" id="quickClearBtn">
+                            <i class="fas fa-trash-alt"></i> Pulisci Grafico
+                        </button>
+                    </div>
+
+                    <div class="celestial-search-row">
+                        <div class="search-box">
+                            <input type="text" id="celestialSearchInput" placeholder="Cerca corpo celeste (es. Helix, M31, Giove, M42, Marte)...">
+                        </div>
+                    </div>
+
+                    <div class="category-tabs" id="celestialCategoryTabs"></div>
+                </div>
+
+                <!-- Elenco Corpi Celesti -->
+                <div class="celestial-list" id="celestialList"></div>
+            </div>
+        </div>
     </div>
 
     <!-- Barra di Navigazione Mobile Inferiore (Fissa per Smartphone) -->
@@ -280,6 +335,10 @@
         <button class="nav-tab" data-tab="horizon" id="tabHorizon">
             <i class="fas fa-mountain"></i>
             <span>Orizzonte</span>
+        </button>
+        <button class="nav-tab" data-tab="celestial" id="tabCelestial">
+            <i class="fas fa-satellite-dish"></i>
+            <span>Effemeridi</span>
         </button>
         <button class="nav-tab" data-tab="controls" id="tabControls">
             <i class="fas fa-sliders-h"></i>

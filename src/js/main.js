@@ -1,11 +1,16 @@
 /**
  * main.js - Modulo principale e controller applicazione Astronomical Horizon
- * Con supporto completo per navigazione mobile portrait (drawer, bottom tabs, badge flottante).
+ * Con supporto per:
+ * - Analisi raggiera e perimetro orizzonte ad alta risoluzione
+ * - Tracciamento corpi celesti e oggetti del cielo profondo (Messier, NGC 7293 Helix, Pianeti, Stelle)
+ * - Calcolo effemeridi reali intersecate con i rilievi topografici
+ * - Navigazione mobile portrait e layout responsivo
  */
 
 import { DEMProvider } from './dem.js';
 import { MapManager } from './map.js';
 import { HorizonChartManager } from './horizonChart.js';
+import { CelestialTracker } from './celestialTracker.js';
 import { ExportUtils } from './exportUtils.js';
 
 class AstronomicalHorizonApp {
@@ -14,6 +19,7 @@ class AstronomicalHorizonApp {
         this.worker = null;
         this.mapManager = null;
         this.chartManager = null;
+        this.celestialTracker = null;
 
         this.currentGridData = null;
         this.currentHorizonData = null;
@@ -36,9 +42,10 @@ class AstronomicalHorizonApp {
 
     async init() {
         this.initWorker();
+        this.initMapAndChart();
+        this.initCelestialTracker();
         this.initUI();
         this.initMobileNav();
-        this.initMapAndChart();
         
         // Calcolo iniziale con posizione predefinita (Lago di Pramollo - Ristorante da Livio)
         setTimeout(() => {
@@ -77,6 +84,12 @@ class AstronomicalHorizonApp {
             (lat, lon) => this.onLocationChanged(lat, lon),
             (lat, lon) => this.onMouseHoverMap(lat, lon)
         );
+    }
+
+    initCelestialTracker() {
+        this.celestialTracker = new CelestialTracker(this.chartManager, this.mapManager, (selectedMap) => {
+            console.log(`Corpi celesti tracciati: ${selectedMap.size}`);
+        });
     }
 
     initUI() {
@@ -242,6 +255,7 @@ class AstronomicalHorizonApp {
 
         const tabMap = document.getElementById('tabMap');
         const tabHorizon = document.getElementById('tabHorizon');
+        const tabCelestial = document.getElementById('tabCelestial');
         const tabControls = document.getElementById('tabControls');
         const horizonPanel = document.getElementById('horizonPanel');
 
@@ -253,7 +267,10 @@ class AstronomicalHorizonApp {
             closeDrawerBtn.addEventListener('click', () => this.closeMobileDrawer());
         }
         if (sidebarBackdrop) {
-            sidebarBackdrop.addEventListener('click', () => this.closeMobileDrawer());
+            sidebarBackdrop.addEventListener('click', () => {
+                this.closeMobileDrawer();
+                if (this.celestialTracker) this.celestialTracker.closePanel();
+            });
         }
 
         // Chiudi Bottom Sheet Grafico su Mobile
@@ -272,6 +289,7 @@ class AstronomicalHorizonApp {
             tabMap.addEventListener('click', () => {
                 this.setActiveNavTab(tabMap);
                 this.closeMobileDrawer();
+                if (this.celestialTracker) this.celestialTracker.closePanel();
                 if (horizonPanel) horizonPanel.classList.remove('mobile-active');
             });
         }
@@ -280,6 +298,7 @@ class AstronomicalHorizonApp {
             tabHorizon.addEventListener('click', () => {
                 this.setActiveNavTab(tabHorizon);
                 this.closeMobileDrawer();
+                if (this.celestialTracker) this.celestialTracker.closePanel();
                 if (horizonPanel) {
                     horizonPanel.classList.add('mobile-active');
                     setTimeout(() => {
@@ -291,9 +310,21 @@ class AstronomicalHorizonApp {
             });
         }
 
+        if (tabCelestial) {
+            tabCelestial.addEventListener('click', () => {
+                this.setActiveNavTab(tabCelestial);
+                this.closeMobileDrawer();
+                if (horizonPanel) horizonPanel.classList.remove('mobile-active');
+                if (this.celestialTracker) {
+                    this.celestialTracker.openPanel();
+                }
+            });
+        }
+
         if (tabControls) {
             tabControls.addEventListener('click', () => {
                 this.setActiveNavTab(tabControls);
+                if (this.celestialTracker) this.celestialTracker.closePanel();
                 this.openMobileDrawer();
             });
         }
@@ -318,7 +349,9 @@ class AstronomicalHorizonApp {
         const tabMap = document.getElementById('tabMap');
 
         if (sidebar) sidebar.classList.remove('open');
-        if (backdrop) backdrop.classList.remove('active');
+        if (backdrop && (!this.celestialTracker || !this.celestialTracker.panel.classList.contains('open'))) {
+            backdrop.classList.remove('active');
+        }
         if (tabControls && tabControls.classList.contains('active')) {
             this.setActiveNavTab(tabMap);
         }
@@ -417,11 +450,16 @@ class AstronomicalHorizonApp {
             this.mapManager.updateViewshedOverlay(rgbaBuffer, this.currentGridData, this.params.overlayOpacity, horizonProfile);
         }
 
-        // 2. Aggiorna grafico orizzonte 360° con magnificazione
+        // 2. Aggiorna grafico orizzonte 360° con magnificazione e tracce celesti
         const obs = this.mapManager.currentObserver;
         this.chartManager.updateChart(horizonProfile, obs.lat, obs.lon);
 
-        // 3. Aggiorna statistiche UI e badge mobile
+        // 3. Sincronizza effemeridi corpi celesti
+        if (this.celestialTracker) {
+            this.celestialTracker.onHorizonUpdated();
+        }
+
+        // 4. Aggiorna statistiche UI e badge mobile
         this.updateStatsUI(stats);
 
         this.setLoading(false);

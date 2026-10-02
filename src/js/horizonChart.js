@@ -1,10 +1,11 @@
 /**
  * horizonChart.js - Gestione del grafico interattivo dell'orizzonte astronomico ad alta risoluzione
  * Supporta:
- * - Magnificazione verticale del profilo (1x - 5x) per evidenziare ogni dettaglio altimetrico
+ * - Profilo altimetrico 360° con magnificazione verticale (1x - 5x)
  * - Colorazione coordinata con la raggiera (Rosso > 20°, Verde < 15°)
- * - Linee guida di soglia a 15° e 20°
- * - Traiettorie solari e spline cubica monotona continua
+ * - Tracciamento altazimutale di corpi celesti (Pianeti, Luna, Nebulose come Helix, Messier, Stelle)
+ * - Calcolo in tempo reale di visibilità reale (sopra o sotto le creste montuose)
+ * - Linee guida di soglia a 15° e 20° e tracce solari stagionali
  */
 
 import { AstronomyService } from './astronomy.js';
@@ -18,7 +19,9 @@ export class HorizonChartManager {
         this.observerLat = 0;
         this.observerLon = 0;
         this.showSunPaths = true;
-        this.verticalMagnification = 2.0; // Default: 2x magnificazione per esaltare i rilievi
+        this.verticalMagnification = 2.0;
+        this.trackedCelestialObjects = [];
+        this.currentDate = new Date();
     }
 
     /**
@@ -27,17 +30,39 @@ export class HorizonChartManager {
     setMagnification(factor) {
         this.verticalMagnification = Math.max(1.0, Math.min(5.0, factor));
         if (this.currentHorizonData) {
-            this.updateChart(this.currentHorizonData, this.observerLat, this.observerLon);
+            this.updateChart(this.currentHorizonData, this.observerLat, this.observerLon, this.currentDate);
+        }
+    }
+
+    /**
+     * Imposta la lista di corpi celesti tracciati nel grafico
+     */
+    setTrackedCelestialObjects(objectsList, date = null) {
+        this.trackedCelestialObjects = objectsList || [];
+        if (date) this.currentDate = date;
+        if (this.currentHorizonData) {
+            this.updateChart(this.currentHorizonData, this.observerLat, this.observerLon, this.currentDate);
+        }
+    }
+
+    /**
+     * Imposta la data per i calcoli astronomici ed effemeridi
+     */
+    setDate(date) {
+        this.currentDate = date || new Date();
+        if (this.currentHorizonData) {
+            this.updateChart(this.currentHorizonData, this.observerLat, this.observerLon, this.currentDate);
         }
     }
 
     /**
      * Inizializza o aggiorna il grafico dell'orizzonte
      */
-    updateChart(horizonProfile, lat, lon) {
+    updateChart(horizonProfile, lat, lon, date = null) {
         this.currentHorizonData = horizonProfile;
         this.observerLat = lat;
         this.observerLon = lon;
+        if (date) this.currentDate = date;
 
         if (!this.canvas) return;
 
@@ -64,7 +89,7 @@ export class HorizonChartManager {
         }
 
         // Calcola percorsi solari
-        const sunPaths = AstronomyService.getAstronomicalPaths(lat, lon);
+        const sunPaths = AstronomyService.getAstronomicalPaths(lat, lon, this.currentDate);
 
         // Genera gradiente dinamico per lo skyline (Rosso se > 20°, Verde se < 15°)
         const ctx = this.canvas.getContext('2d');
@@ -91,7 +116,7 @@ export class HorizonChartManager {
                 pointHoverBorderWidth: 2,
                 cubicInterpolationMode: 'monotone',
                 tension: 0.25,
-                order: 2
+                order: 20
             }
         ];
 
@@ -108,7 +133,7 @@ export class HorizonChartManager {
                 borderDash: [5, 4],
                 pointRadius: 0,
                 fill: false,
-                order: 10
+                order: 30
             },
             {
                 label: 'Soglia 15° (Rilievo Basso - Verde)',
@@ -118,10 +143,55 @@ export class HorizonChartManager {
                 borderDash: [5, 4],
                 pointRadius: 0,
                 fill: false,
-                order: 11
+                order: 31
             }
         );
 
+        // ==========================================
+        // --- TRAIETTORIE CORPI CELESTI SELEZIONATI ---
+        // ==========================================
+        if (this.trackedCelestialObjects && this.trackedCelestialObjects.length > 0) {
+            this.trackedCelestialObjects.forEach((celestialObj, objIndex) => {
+                const celestialPathPoints = AstronomyService.generateCelestialPath(celestialObj, this.currentDate, lat, lon, 8);
+                const celestialData = new Array(numPoints).fill(null);
+                const timeMap = new Array(numPoints).fill('');
+
+                celestialPathPoints.forEach(p => {
+                    // Filtra punti molto sotto l'orizzonte (sotto -10°) per non sporcare la scala
+                    if (p.y >= -10.0) {
+                        const bin = Math.min(numPoints - 1, Math.max(0, Math.round((p.x / 360.0) * numPoints)));
+                        celestialData[bin] = p.y;
+                        timeMap[bin] = p.time;
+                    }
+                });
+
+                const objColor = celestialObj.color || '#ec4899';
+
+                datasets.push({
+                    label: `${celestialObj.name}`,
+                    data: celestialData,
+                    borderColor: objColor,
+                    backgroundColor: objColor,
+                    borderWidth: 2.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointHoverBackgroundColor: '#ffffff',
+                    pointHoverBorderColor: objColor,
+                    pointHoverBorderWidth: 3,
+                    spanGaps: true,
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.25,
+                    order: 5 + objIndex,
+                    customTimes: timeMap,
+                    isCelestial: true,
+                    celestialMeta: celestialObj
+                });
+            });
+        }
+
+        // ==========================================
+        // --- TRAIETTORIE SOLARI ---
+        // ==========================================
         if (this.showSunPaths) {
             const summerData = new Array(numPoints).fill(null);
             const winterData = new Array(numPoints).fill(null);
@@ -145,49 +215,49 @@ export class HorizonChartManager {
                     label: 'Sole Oggi',
                     data: todayData,
                     borderColor: '#fbbf24',
-                    borderWidth: 2.2,
+                    borderWidth: 2.0,
                     pointRadius: 0,
                     pointHoverRadius: 4,
                     spanGaps: true,
                     cubicInterpolationMode: 'monotone',
                     tension: 0.2,
-                    order: 1
+                    order: 10
                 },
                 {
                     label: 'Solstizio Estate (21 Giu)',
                     data: summerData,
                     borderColor: '#f97316',
-                    borderWidth: 1.5,
+                    borderWidth: 1.4,
                     borderDash: [4, 4],
                     pointRadius: 0,
                     spanGaps: true,
                     cubicInterpolationMode: 'monotone',
                     tension: 0.2,
-                    order: 3
+                    order: 12
                 },
                 {
                     label: 'Equinozio (20 Mar / 22 Set)',
                     data: equinoxData,
                     borderColor: '#a855f7',
-                    borderWidth: 1.5,
+                    borderWidth: 1.4,
                     borderDash: [3, 3],
                     pointRadius: 0,
                     spanGaps: true,
                     cubicInterpolationMode: 'monotone',
                     tension: 0.2,
-                    order: 4
+                    order: 13
                 },
                 {
                     label: 'Solstizio Inverno (21 Dic)',
                     data: winterData,
                     borderColor: '#38bdf8',
-                    borderWidth: 1.5,
+                    borderWidth: 1.4,
                     borderDash: [4, 4],
                     pointRadius: 0,
                     spanGaps: true,
                     cubicInterpolationMode: 'monotone',
                     tension: 0.2,
-                    order: 5
+                    order: 14
                 }
             );
         }
@@ -209,8 +279,8 @@ export class HorizonChartManager {
         const range = Math.max(8.0, (maxAngle - minAngle));
         const effectiveRange = range / this.verticalMagnification;
         const midPoint = (maxAngle + minAngle) / 2;
-        const yMin = Math.floor(Math.min(-2.0, midPoint - effectiveRange * 0.55));
-        const yMax = Math.ceil(Math.max(22.0, midPoint + effectiveRange * 0.65));
+        const yMin = Math.floor(Math.min(-5.0, midPoint - effectiveRange * 0.55));
+        const yMax = Math.ceil(Math.max(25.0, midPoint + effectiveRange * 0.75));
 
         if (this.chart) {
             this.chart.data.labels = labels;
@@ -240,7 +310,7 @@ export class HorizonChartManager {
                         display: true,
                         position: 'top',
                         labels: {
-                            color: '#94a3b8',
+                            color: '#cbd5e1',
                             boxWidth: 14,
                             font: { size: 11 }
                         }
@@ -262,16 +332,28 @@ export class HorizonChartManager {
                             afterBody: (items) => {
                                 const idx = items[0].dataIndex;
                                 const info = this.currentHorizonData ? this.currentHorizonData[idx] : null;
+                                const bodyLines = [];
+
+                                // Informazioni sui corpi celesti presenti su questo azimut
+                                items.forEach(item => {
+                                    const ds = this.chart.data.datasets[item.datasetIndex];
+                                    if (ds && ds.isCelestial && ds.customTimes && ds.customTimes[idx]) {
+                                        const altVal = item.parsed.y;
+                                        const hAng = info ? info.maxAngle : 0;
+                                        const isAbove = altVal >= hAng;
+                                        const statusEmoji = isAbove ? '🟢 Visibile sopra le vette' : '🔴 Nascosto dal rilievo';
+                                        bodyLines.push(`✨ ${ds.label}: Transito ore ${ds.customTimes[idx]} (${statusEmoji})`);
+                                    }
+                                });
+
                                 if (info && info.hasObstacle) {
                                     const category = info.maxAngle >= 20 ? '🔴 Rilievo Alto (> 20°)' : (info.maxAngle >= 15 ? '🟠 Rilievo Medio (15°-20°)' : '🟢 Rilievo Basso (< 15°)');
-                                    return [
-                                        `Stato: ${category}`,
-                                        `Quota Vetta: ${info.elevationM} m`,
-                                        `Distanza Vetta: ${info.distanceKm} km`,
-                                        `Coordinate: ${info.lat.toFixed(4)}, ${info.lon.toFixed(4)}`
-                                    ];
+                                    bodyLines.push(
+                                        `Orizzonte: ${category}`,
+                                        `Quota Vetta: ${info.elevationM} m (Distanza: ${info.distanceKm} km)`
+                                    );
                                 }
-                                return ['Nessun rilievo bloccante entro il raggio'];
+                                return bodyLines;
                             },
                             label: (context) => {
                                 const val = context.parsed.y;
@@ -354,7 +436,7 @@ export class HorizonChartManager {
     toggleSunPaths(visible) {
         this.showSunPaths = visible;
         if (this.currentHorizonData) {
-            this.updateChart(this.currentHorizonData, this.observerLat, this.observerLon);
+            this.updateChart(this.currentHorizonData, this.observerLat, this.observerLon, this.currentDate);
         }
     }
 
